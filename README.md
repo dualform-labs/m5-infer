@@ -17,16 +17,20 @@
 
 ### ⚡ Speed — by the numbers
 
-| Metric (Qwen 3.5 9B 4-bit, M5 MacBook Air) | Ollama | mlx_lm.server | **m5-infer v1.0.0** |
-|:---|---:|---:|---:|
-| **Decode tok/s** | 8.9 | 17.0 | **40.0** |
-| vs Ollama | 1.0× | 1.9× | **4.5×** |
-| vs mlx_lm.server | 0.5× | 1.0× | **2.4×** |
-| **Warm TTFT** (12K tool schema, 2nd call) | 64.9 s | 2.3 s | **11.1 s** |
-| **5-turn session (turn 5)** | failed | 1.6 s | **7.5 s** |
-| **Opus-4.7 judged quality** (10-task avg) | 5.28 / 10 | — | **5.85 / 10** |
+m5-infer is a layer on top of the same `mlx-lm` library that powers `mlx_lm.server` — so the primary comparison is **m5-infer vs mlx_lm.server** on identical hardware, identical weights, identical prompts. (Ollama numbers included for reference.)
 
-**Same Mac, same model, same prompts.** No fine-tuning, no re-quantization — the gap comes entirely from the inference-engine layer.
+| Metric (Qwen 3.5 9B 4-bit, M5 MacBook Air base) | mlx_lm.server | **m5-infer v1.0.0** | Ollama |
+|:---|---:|---:|---:|
+| **Decode tok/s** (long_gen 512) | 17.0 | **40.0** (2.4×) | 8.9 |
+| **Decode tok/s · thinking ON** | 18.6 | **28.8** (1.5×) | 11.2 |
+| **Thinking-ON Short QA** (3 factual) | 0 / 3 | **3 / 3** | 0 / 3 |
+| **Opus-4.7 judged output** (10-task avg, same model) | — | **5.85 / 10** | 5.28 / 10 |
+| **Warm TTFT** (12 K tool schema, 2nd call) | **2.3 s** | 11.1 s | 64.9 s |
+| **5-turn session · turn 5** | **1.6 s** | 7.5 s | failed |
+| vs mlx_lm.server (decode) | 1.0× | **2.4× faster** | 0.5× |
+| vs Ollama (decode) | 1.9× | **4.5× faster** | 1.0× |
+
+**Honest read.** m5-infer wins on sustained decode throughput, thinking-mode answer extraction, and output quality as graded by Opus 4.7. `mlx_lm.server` wins on warm TTFT and short 5-turn sessions — its in-process prefix cache is genuinely fast for those workloads. Different engines, different trade-offs. Same Mac, same weights, no fine-tuning — the gaps come from the inference-engine layer.
 
 ### Overview
 
@@ -423,18 +427,22 @@ Issues and pull requests are welcome. Please open an issue first for major chang
 
 ## 日本語
 
-### ⚡ 速度 — 圧倒的な差
+### ⚡ 速度 — 数値で
 
-| 指標 (Qwen 3.5 9B 4-bit、M5 MacBook Air) | Ollama | mlx_lm.server | **m5-infer v1.0.0** |
+m5-infer は `mlx_lm.server` と同じ `mlx-lm` ライブラリの上に重ねる薄い層です。ですので最も意味のある比較は **m5-infer vs `mlx_lm.server`** — 同じハード・同じ重み・同じプロンプト。Ollama の数値は参考として併記します。
+
+| 指標 (Qwen 3.5 9B 4-bit、M5 MacBook Air base) | mlx_lm.server | **m5-infer v1.0.0** | Ollama |
 |:---|---:|---:|---:|
-| **Decode 速度 (tok/s)** | 8.9 | 17.0 | **40.0** |
-| vs Ollama | 1.0× | 1.9× | **4.5×** |
-| vs mlx_lm.server | 0.5× | 1.0× | **2.4×** |
-| **Warm TTFT** (12K tool スキーマ、2 回目) | 64.9 秒 | 2.3 秒 | **11.1 秒** |
-| **5 ターン継続 session** | 失敗 | 1.6 秒 | **7.5 秒** |
-| **Opus 4.7 judged 品質** (10 task 平均) | 5.28 / 10 | — | **5.85 / 10** |
+| **Decode tok/s** (long_gen 512) | 17.0 | **40.0** (2.4 倍) | 8.9 |
+| **Decode tok/s · thinking ON** | 18.6 | **28.8** (1.5 倍) | 11.2 |
+| **Thinking-ON 短答 QA** (3 問) | 0 / 3 | **3 / 3** | 0 / 3 |
+| **Opus-4.7 判定 出力スコア** (10 task 平均、同一モデル) | — | **5.85 / 10** | 5.28 / 10 |
+| **Warm TTFT** (12 K tool スキーマ、2 回目) | **2.3 秒** | 11.1 秒 | 64.9 秒 |
+| **5 ターン session · turn 5** | **1.6 秒** | 7.5 秒 | 失敗 |
+| mlx_lm.server 比 (decode) | 1.0× | **2.4 倍速い** | 0.5× |
+| Ollama 比 (decode) | 1.9× | **4.5 倍速い** | 1.0× |
 
-**同じ Mac、同じモデル、同じプロンプト**で計測した実測値。学習や再量子化は一切なし — 推論エンジン側の最適化だけでこの差が出ます。
+**正直な読み方**: m5-infer は持続 decode 速度、thinking モードでの回答抽出、Opus 4.7 採点の出力スコアで勝ちます。`mlx_lm.server` は warm TTFT と短めの 5 ターン session で勝ちます — in-process の prefix cache が本当に速いからです。エンジンごとにトレードオフが違うだけ。同じ Mac、同じ重み、ファインチューニングなし — 差を生むのは推論エンジンの層です。
 
 ### 概要
 
