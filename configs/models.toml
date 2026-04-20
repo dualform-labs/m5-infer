@@ -14,7 +14,7 @@ max_output_tokens_hard = 16384
 
 [models.sub_heavy]
 name = "gemma_heavy"
-path = "dealignai/Gemma-4-26B-A4B-JANG_4M-CRACK"
+path = "mlx-community/gemma-4-26b-a4b-it-4bit"
 modality = "image_text"
 role = "sub_heavy"
 load_strategy = "cold"
