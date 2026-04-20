@@ -220,6 +220,49 @@ resp = client.chat.completions.create(
 print(resp.choices[0].message.content)
 ```
 
+#### Downloading models
+
+m5-infer loads any **MLX-compatible model** from HuggingFace by its repo ID. Weights are cached by the underlying `mlx-lm` / `huggingface_hub` stack under `~/.cache/huggingface/` — no manual download step required.
+
+**Three ways to load a model:**
+
+**1. Configure the default model** — edit `configs/engine.toml` before first start:
+
+```toml
+[model]
+family = "auto"                                      # auto-detect from main_path
+main_path = "mlx-community/Qwen3.5-9B-MLX-4bit"      # downloaded on first start
+draft_path = "mlx-community/Qwen3.5-0.8B-MLX-4bit"   # optional, for speculative decoding
+```
+
+On first `./start.sh`, both models are downloaded (several GB for the main, ~0.6 GB for the draft). Subsequent starts use the local cache.
+
+**2. Pull a model at runtime via HTTP** — hot-swap without restarting the server:
+
+```bash
+curl -s -X POST http://127.0.0.1:11436/v1/models/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model":"mlx-community/Llama-3.2-3B-Instruct-4bit"}'
+```
+
+The request blocks new generations until the swap completes. Returns `{"status":"loaded", ...}` on success.
+
+**3. Pre-download outside m5-infer** — useful on air-gapped setups or when you want an offline first-start:
+
+```bash
+# Use the huggingface CLI (installed alongside huggingface_hub)
+huggingface-cli download mlx-community/Qwen3.5-9B-MLX-4bit
+
+# Or with git-lfs
+git clone https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit
+```
+
+Then point `main_path` in `engine.toml` at the repo ID — m5-infer will find the already-cached weights.
+
+**Finding MLX-compatible models**: browse [mlx-community on HuggingFace](https://huggingface.co/mlx-community) — the engine supports Qwen 3.5 / 3.6 / 2.5, Llama 3.x, Mistral, and Gemma 2/3/4 families out of the box (see `configs/engine.toml` and `docs/MODEL_FAMILY_GUIDE.md`).
+
+**Authentication for gated models**: log in once with `huggingface-cli login`; the token is picked up automatically.
+
 ### Requirements
 
 | Item | Minimum | Recommended |
@@ -560,6 +603,49 @@ resp = client.chat.completions.create(
 )
 print(resp.choices[0].message.content)
 ```
+
+#### モデルのダウンロード
+
+m5-infer は **MLX 互換のモデル**なら HuggingFace の repo ID を指定するだけでロードできます。weights は内部で利用している `mlx-lm` / `huggingface_hub` が `~/.cache/huggingface/` 以下に自動キャッシュするので、手動での download 操作は不要です。
+
+**ロード方法は 3 通り:**
+
+**1. デフォルトモデルを設定ファイルで指定** — 初回起動前に `configs/engine.toml` を編集:
+
+```toml
+[model]
+family = "auto"                                      # main_path から自動判別
+main_path = "mlx-community/Qwen3.5-9B-MLX-4bit"      # 初回起動時に自動ダウンロード
+draft_path = "mlx-community/Qwen3.5-0.8B-MLX-4bit"   # 任意 (speculative decoding 用)
+```
+
+初回の `./start.sh` で両方をダウンロードします (main が数 GB、draft が ~0.6 GB)。2 回目以降はローカルキャッシュから読み込まれます。
+
+**2. 実行中に HTTP でモデルを pull** — サーバーを再起動せずにホットスワップ:
+
+```bash
+curl -s -X POST http://127.0.0.1:11436/v1/models/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model":"mlx-community/Llama-3.2-3B-Instruct-4bit"}'
+```
+
+swap 完了まで新規生成リクエストは待機されます。成功時に `{"status":"loaded", ...}` が返ります。
+
+**3. m5-infer 外で事前ダウンロード** — オフライン環境や初回起動前に weights を用意しておきたい場合:
+
+```bash
+# huggingface CLI (huggingface_hub に同梱)
+huggingface-cli download mlx-community/Qwen3.5-9B-MLX-4bit
+
+# または git-lfs
+git clone https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit
+```
+
+その後 `engine.toml` の `main_path` に同じ repo ID を指定すれば、既存キャッシュを利用します。
+
+**MLX 互換モデルの探し方**: [HuggingFace mlx-community](https://huggingface.co/mlx-community) で探すのが最も早いです。Qwen 3.5 / 3.6 / 2.5、Llama 3.x、Mistral、Gemma 2/3/4 はそのまま動作します (詳細は `configs/engine.toml` と `docs/MODEL_FAMILY_GUIDE.md`)。
+
+**Gated (利用申請制) モデル**: `huggingface-cli login` で一度ログインしておけば token が自動で使われます。
 
 ### 動作要件
 
