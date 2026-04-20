@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/hero.png" alt="m5-infer" width="880" />
+</p>
+
 # m5-infer
 
 > **Extraordinary speed, extraordinary quality — an MLX-based inference engine for Apple Silicon.**
