@@ -387,13 +387,17 @@ Qwen 3.5 supports `<think>` reasoning blocks. We ran the same bench (long_gen ×
 ![Opus quality — aggregate](docs/images/quality_aggregate.png)
 ![Opus quality — per task](docs/images/quality_per_task.png)
 
+### Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for what we are considering for future releases. Feature requests outside this scope are welcome via [Discussions](https://github.com/dualform-labs/m5-infer/discussions).
+
 ### License
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ### Contributing
 
-Issues and pull requests are welcome. Please open an issue first for major changes.
+Issues and pull requests are welcome. Please open an issue first for major changes. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
@@ -771,10 +775,14 @@ Qwen 3.5 の `<think>` 推論ブロックを **ON / OFF** の両方で、同じ 
 ![Opus quality — aggregate](docs/images/quality_aggregate.png)
 ![Opus quality — per task](docs/images/quality_per_task.png)
 
+### ロードマップ
+
+将来リリースで検討中の項目は [docs/ROADMAP.md](docs/ROADMAP.md) を参照。ロードマップ外の要望は [Discussions](https://github.com/dualform-labs/m5-infer/discussions) でお聞かせください。
+
 ### ライセンス
 
 Apache License 2.0 — [LICENSE](LICENSE) と [NOTICE](NOTICE) を参照。
 
 ### コントリビューション
 
-Issue や Pull Request を歓迎します。大きな変更は事前に Issue で議論してください。
+Issue や Pull Request を歓迎します。大きな変更は事前に Issue で議論してください。詳細は [CONTRIBUTING.md](CONTRIBUTING.md) と [docs/ROADMAP.md](docs/ROADMAP.md) を参照。

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / Discussion
+    url: https://github.com/dualform-labs/m5-infer/discussions
+    about: General questions, design discussions, or "is this a bug?" — use Discussions instead of Issues.
