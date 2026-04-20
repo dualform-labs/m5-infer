@@ -1,5 +1,5 @@
 #!/bin/bash
-# M5 MLX Inference Engine — start with log terminal
+# m5-infer — start server (with optional log tail in a second terminal)
 #
 # Usage:
 #   ./start.sh          # Start server + open log terminal
