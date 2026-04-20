@@ -398,6 +398,19 @@ Qwen 3.5 supports `<think>` reasoning blocks. We ran the same bench (long_gen ×
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for what we are considering for future releases. Feature requests outside this scope are welcome via [Discussions](https://github.com/dualform-labs/m5-infer/discussions).
 
+### Acknowledgments
+
+m5-infer stands on the shoulders of excellent work. With respect and gratitude to the teams below:
+
+- **Apple MLX team** — [MLX](https://github.com/ml-explore/mlx) and [mlx-lm](https://github.com/ml-explore/mlx-lm). m5-infer is a layer on top of mlx-lm; every speedup we report is relative to the excellent baseline MLX already provides.
+- **Local LLM pioneers** — [Ollama](https://ollama.com), [llama.cpp](https://github.com/ggerganov/llama.cpp), [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang). These projects made local LLM inference accessible to millions and raised the UX bar m5-infer has to meet. Our benchmark comparisons against Ollama and `mlx_lm.server` reflect different design priorities, not judgment — each engine optimizes for different workloads.
+- **Open-weight model makers** — Alibaba DAMO (Qwen), Meta (Llama), Mistral AI (Mistral), Google DeepMind (Gemma). Releasing state-of-the-art models openly is an act of generosity the entire local-inference ecosystem depends on. Our Qwen 3.5-specific innovations exist because Alibaba shipped a hybrid architecture openly.
+- **Research community** — Leviathan et al. (2023) on speculative decoding, the Medusa authors, GatedDeltaNet architects, and [HuggingFace](https://huggingface.co) for hosting and distribution.
+
+A note on comparisons: the benchmark numbers in this README are measured, reproducible, and specific to a single M5 MacBook Air base. They are not a judgment of the other engines' overall quality. Different goals produce different trade-offs, and we respect each team's choices.
+
+**Trademarks.** Apple, Apple Silicon, MLX, and macOS are trademarks of Apple Inc. Ollama is a trademark of Ollama Inc. Qwen, Llama, Mistral, and Gemma are trademarks or registered trademarks of their respective owners. All trademarks are used here in a purely descriptive, nominative capacity for factual technical reference. m5-infer is an independent project, not affiliated with, endorsed by, or sponsored by any of the aforementioned entities.
+
 ### License
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
@@ -793,6 +806,19 @@ Qwen 3.5 の `<think>` 推論ブロックを **ON / OFF** の両方で、同じ 
 ### ロードマップ
 
 将来リリースで検討中の項目は [docs/ROADMAP.md](docs/ROADMAP.md) を参照。ロードマップ外の要望は [Discussions](https://github.com/dualform-labs/m5-infer/discussions) でお聞かせください。
+
+### 謝辞
+
+m5-infer は優れた仕事の積み重ねの上に築かせていただきました。以下の各チームに、敬意と感謝を込めて。
+
+- **Apple MLX チーム** — [MLX](https://github.com/ml-explore/mlx) と [mlx-lm](https://github.com/ml-explore/mlx-lm)。m5-infer は mlx-lm の上に重ねる薄い層であり、私たちが提示する速度向上はすべて MLX という優れた基礎の上での相対値です。
+- **ローカル LLM の開拓者たち** — [Ollama](https://ollama.com)、[llama.cpp](https://github.com/ggerganov/llama.cpp)、[vLLM](https://github.com/vllm-project/vllm)、[SGLang](https://github.com/sgl-project/sglang)。これらのプロジェクトがローカル LLM を何百万人もの開発者に届け、m5-infer がいま満たすべき UX 基準を引き上げてくれました。Ollama や `mlx_lm.server` との比較ベンチは、同条件での like-for-like 比較であり、優劣判定ではありません。エンジンごとに最適化の優先順位が異なるだけです。
+- **Open-weight モデルの提供者** — Alibaba DAMO (Qwen)、Meta (Llama)、Mistral AI (Mistral)、Google DeepMind (Gemma)。最先端のモデルを open weights で公開すること自体が寛容な行為であり、ローカル推論エコシステム全体がそれに依存しています。私たちの Qwen 3.5 向け新技術は、Alibaba が hybrid 構成のモデルを公開してくれたからこそ実装できました。
+- **研究コミュニティ** — Leviathan 他 (2023) の speculative decoding、Medusa 著者、GatedDeltaNet の設計者、配布基盤としての [HuggingFace](https://huggingface.co)。
+
+比較に関する一言: 本 README のベンチマーク値は、M5 MacBook Air base 1 台での実測・再現可能な値であり、他エンジンの全体的な品質を判定するものではありません。目指すものが違えば、トレードオフも違います。各チームの選択に敬意を表します。
+
+**商標について**: Apple、Apple Silicon、MLX、macOS は Apple Inc. の商標です。Ollama は Ollama Inc. の商標です。Qwen、Llama、Mistral、Gemma は各社の商標または登録商標です。本文書内でのこれら商標の使用は、いずれも純粋に記述的・事実指示的 (nominative use) な目的に限られます。m5-infer は独立したプロジェクトであり、上記いずれの企業・団体とも関連、提携、推奨、スポンサー関係を有しません。
 
 ### ライセンス
 
