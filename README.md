@@ -158,14 +158,66 @@ cd m5-infer
 
 # Install dependencies
 pip install -e .
+```
 
-# Start the server (default port 11436)
-./start.sh --fg
+#### Start / stop / chat scripts
 
-# In another terminal — test with OpenAI-compatible client
+```bash
+./start.sh --fg        # start the engine in foreground (port 11436). Ctrl-C to stop.
+./start.sh             # start detached; logs go to logs/
+./stop.sh              # stop a detached server
+
+./chat.sh              # interactive chat CLI (requires the server running)
+./chat.sh mlx-community/Llama-3.2-3B-Instruct-4bit   # with a specific model
+```
+
+#### HTTP endpoints (OpenAI-compatible)
+
+Once the server is up, these endpoints are available on `http://127.0.0.1:11436`:
+
+| Method | Path | Purpose |
+|:---|:---|:---|
+| `GET`  | `/health` | Liveness check + engine status (memory, MMRS, MRPB, MTAB stats) |
+| `GET`  | `/v1/models` | List available models (OpenAI-compatible) |
+| `POST` | `/v1/models/pull` | Download + load a model from HuggingFace |
+| `POST` | `/v1/chat/completions` | Chat completion (OpenAI-compatible; streaming supported via `stream: true`) |
+
+Discover them live from a running server:
+
+```bash
+# List endpoints from the FastAPI OpenAPI spec
+curl -s http://127.0.0.1:11436/openapi.json | python3 -c \
+  "import json,sys; [print(f'{m.upper():6} {p}') for p,v in json.load(sys.stdin)['paths'].items() for m in v]"
+
+# Or browse the interactive docs
+open http://127.0.0.1:11436/docs        # Swagger UI
+open http://127.0.0.1:11436/redoc       # ReDoc
+```
+
+#### Test the chat endpoint
+
+```bash
 curl -s http://127.0.0.1:11436/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'
+
+# Streaming variant
+curl -sN http://127.0.0.1:11436/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello"}],"max_tokens":64,"stream":true}'
+```
+
+Drop-in with the official OpenAI Python SDK:
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:11436/v1", api_key="not-needed")
+resp = client.chat.completions.create(
+    model="main",
+    messages=[{"role": "user", "content": "Hello"}],
+    max_tokens=64,
+)
+print(resp.choices[0].message.content)
 ```
 
 ### Requirements
@@ -447,13 +499,66 @@ git clone https://github.com/dualform-labs/m5-infer.git
 cd m5-infer
 
 pip install -e .
+```
 
-./start.sh --fg         # port 11436 で起動
+#### 起動 / 停止 / チャット スクリプト
 
-# 別 terminal で動作確認
+```bash
+./start.sh --fg        # フォアグラウンド起動 (port 11436)。Ctrl-C で停止。
+./start.sh             # バックグラウンド起動、ログは logs/ に出力
+./stop.sh              # バックグラウンド起動したサーバーの停止
+
+./chat.sh              # 対話型 CLI (サーバー起動中にのみ動作)
+./chat.sh mlx-community/Llama-3.2-3B-Instruct-4bit   # モデルを指定して起動
+```
+
+#### HTTP エンドポイント (OpenAI 互換)
+
+サーバー起動後、`http://127.0.0.1:11436` で以下が利用できます:
+
+| Method | Path | 用途 |
+|:---|:---|:---|
+| `GET`  | `/health` | 稼働確認 + エンジン状態 (memory、MMRS、MRPB、MTAB の統計) |
+| `GET`  | `/v1/models` | 利用可能モデル一覧 (OpenAI 互換) |
+| `POST` | `/v1/models/pull` | HuggingFace からモデルを download + load |
+| `POST` | `/v1/chat/completions` | チャット生成 (OpenAI 互換、`stream: true` でストリーミング対応) |
+
+起動中のサーバーからエンドポイントを取得する方法:
+
+```bash
+# FastAPI の OpenAPI spec から一覧を取得
+curl -s http://127.0.0.1:11436/openapi.json | python3 -c \
+  "import json,sys; [print(f'{m.upper():6} {p}') for p,v in json.load(sys.stdin)['paths'].items() for m in v]"
+
+# ブラウザから対話的にドキュメントを見る
+open http://127.0.0.1:11436/docs        # Swagger UI
+open http://127.0.0.1:11436/redoc       # ReDoc
+```
+
+#### チャット生成の動作確認
+
+```bash
 curl -s http://127.0.0.1:11436/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"こんにちは"}],"max_tokens":64}'
+
+# ストリーミング版
+curl -sN http://127.0.0.1:11436/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"こんにちは"}],"max_tokens":64,"stream":true}'
+```
+
+公式 OpenAI Python SDK のドロップイン代替として使う例:
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:11436/v1", api_key="not-needed")
+resp = client.chat.completions.create(
+    model="main",
+    messages=[{"role": "user", "content": "こんにちは"}],
+    max_tokens=64,
+)
+print(resp.choices[0].message.content)
 ```
 
 ### 動作要件
