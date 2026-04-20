@@ -3,6 +3,7 @@
 > **Extraordinary speed, extraordinary quality — an MLX-based inference engine for Apple Silicon.**
 
 [![CI](https://github.com/dualform-labs/m5-infer/actions/workflows/ci.yml/badge.svg)](https://github.com/dualform-labs/m5-infer/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/m5-infer.svg?color=blue)](https://pypi.org/project/m5-infer/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![MLX](https://img.shields.io/badge/MLX-0.31+-green.svg)](https://github.com/ml-explore/mlx)
@@ -154,11 +155,17 @@ At startup, `app/core/auto_tune.py` detects the chip tier (M1 base → M5 Max) v
 
 ### Quick Start
 
+**Install from PyPI** (recommended):
+
+```bash
+pip install m5-infer
+```
+
+**Or from source** (for development or to modify configs / scripts):
+
 ```bash
 git clone https://github.com/dualform-labs/m5-infer.git
 cd m5-infer
-
-# Install dependencies
 pip install -e .
 ```
 
@@ -549,6 +556,14 @@ cd m5-infer
 
 pip install -e .
 ```
+
+**PyPI からのインストール** (推奨):
+
+```bash
+pip install m5-infer
+```
+
+ソースから install するのは config / スクリプトを改変したい場合、または開発に参加する場合のみで十分です。
 
 #### 起動 / 停止 / チャット スクリプト
 
