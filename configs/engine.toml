@@ -1,0 +1,136 @@
+# m5-infer — engine configuration
+
+[server]
+host = "127.0.0.1"
+port = 11436
+
+# ═══════════════════════════════════════════════════════════════
+# Tiered Memory Architecture — Runtime Mode
+# ═══════════════════════════════════════════════════════════════
+# memory_mode で feature セットを切替:
+#   "moderate"   — 安全汎用、~13 GB resident
+#   "aggressive" — 個人最適、~14 GB resident
+#   "extreme"    — 単機最速、~18 GB resident
+#                  (margin 1 GB のみ、推論専用運用推奨)
+[runtime]
+memory_mode = "extreme"
+
+# Per-mode override (各 mode で個別調整したい時に使用)
+[runtime.moderate]
+ctrsp_lru_size = 32
+draft_model_path = "mlx-community/Qwen3.5-0.8B-MLX-4bit"
+x2_shadow_enabled = false
+mtab_enabled = false
+pst_enabled = false
+ssd_enabled = false
+
+[runtime.aggressive]
+# Shadow off reclaims ~2.8 GB. Reallocated to CTRSP LRU (32 → 64 entries,
+# ~50 MB/entry * 32 new = 1.6 GB), leaving ~1.2 GB margin under the 19 GB
+# working-set limit on 24 GB base.
+ctrsp_lru_size = 64
+# Qwen3.5-0.8B-MLX-4bit draft: 24 layers (18 GDN + 6 FA), vocab=248320
+# matches the 9B main exactly. ~0.6 GB resident, enables speculative decode.
+draft_model_path = "mlx-community/Qwen3.5-0.8B-MLX-4bit"
+# NOTE: x2_shadow disabled by default — Metal 2-bit matmul is not faster
+# than 4-bit on M5 (1.01x) while costing 2.8 GB. Set true only when
+# verifying on newer hardware.
+x2_shadow_enabled = false
+mtab_enabled = true
+pst_enabled = false
+ssd_enabled = true
+
+[runtime.extreme]
+# Shadow off freed 2.8 GB. Bump CTRSP LRU 16 → 32 in extreme mode.
+ctrsp_lru_size = 32
+# Qwen3.5-0.8B-MLX-4bit draft: same hybrid arch + vocab as 9B main (248320).
+draft_model_path = "mlx-community/Qwen3.5-0.8B-MLX-4bit"
+# See note on x2_shadow in [runtime.aggressive]. Kept off even in extreme.
+x2_shadow_enabled = false
+mtab_enabled = true
+pst_enabled = true
+ssd_enabled = true
+
+[engine]
+max_concurrent_requests = 1
+request_timeout_sec = 600
+stall_timeout_sec = 20
+session_idle_ttl_sec = 300
+
+[memory]
+total_budget_gb = 24
+green_threshold_gb = 18.0
+yellow_threshold_gb = 20.0
+red_threshold_gb = 22.0
+reserve_for_system_gb = 2.0
+allow_sub_model_only_if_free_gb = 6.0
+
+[context]
+summary_trigger_tokens = 24000
+raw_recent_turns = 8
+compress_tool_outputs = true
+
+[generation]
+default_max_output_tokens = 8192
+max_output_tokens_hard = 131072  # Qwen3.5 supports 262K context; allow up to 128K output
+preserve_requested_max_tokens = true
+kv_bits = 4  # Quantize KV cache (4 or 8). 4-bit halves KV memory vs 8-bit for long contexts. Minimal quality impact (<1%).
+
+[cache]
+enable_prefix_cache = true
+enable_session_kv_cache = true
+prefix_cache_max_entries = 32
+session_cache_max_entries = 8
+preserve_active_kv = true
+
+[speculative]
+enabled = false
+mode = "auto"
+auto_enable_for_long_generation = true
+disable_when_memory_pressure = true
+draft_model_path = "mlx-community/Qwen3.5-0.8B-MLX-4bit"
+
+[planner]
+route_image_input_to_sub = true
+route_heavy_reasoning_to_sub = true
+fallback_to_main_if_sub_fails = true
+compact_before_sub_load = true
+prefer_cache_preservation = true
+
+[innovation]
+n1_ctrsp_enabled = true
+x4_context_fold_enabled = true
+x2_dpc_enabled = true
+x2_dpc_confidence_threshold = 0.95
+n4_als_enabled = true
+n4_als_similarity_threshold = 0.99
+n3_ssee_enabled = true
+n3_ssee_min_acceptance_rate = 0.30
+n3_ssee_num_draft_tokens = 4
+x5r_compiled_enabled = true
+n6_pes_enabled = true
+n6_pes_num_parallel = 2
+n5_erp_enabled = true
+x1r_chunked_prefill_enabled = false
+x3_kv_distill_enabled = false
+n2_ggsa_enabled = false
+
+# ═══════════════════════════════════════════════════════════
+# v3 generalization: model family (Qwen 3.5 以外のモデルでも使える)
+# ═══════════════════════════════════════════════════════════
+# family: "auto" で main_path から自動判別。明示指定も可:
+#   qwen35  — Qwen 3.5 hybrid (24 GDN + 8 FA) ← v3 native
+#   qwen36  — Qwen 3.6 (想定、mlx_lm 実装に応じて module path 調整)
+#   qwen25  — Qwen 2.5 (pure transformer、speculative FAST PATH)
+#   llama   — Llama 3/3.1/3.2/3.3
+#   mistral — Mistral / Codestral
+#   gemma   — Gemma 2/3/4
+# 非対応 family は UNKNOWN としてロードされ、innovation の一部は自動 off。
+[model]
+family = "auto"                       # auto-detect from main_path
+main_path = ""                        # 空なら registry / runtime default 使用
+draft_path = ""                       # RDMS 用 draft override (空で runtime 値)
+# 強制フラグ (override; 通常は触らない)
+# override_supports_thinking = false
+# override_is_hybrid = false
+draft_family_mismatch = "warn"        # "warn" | "refuse" | "ignore"

@@ -1,0 +1,55 @@
+{
+  "benchmark": "bench_thinking_compare (2026-04-19)",
+  "model": "Qwen 3.5 9B (4-bit)",
+  "hardware": "M5 MacBook Air / 24 GB / macOS 26.4",
+  "results": {
+    "Ollama": {
+      "off": {
+        "decode": 14.820559093865427,
+        "needle_pass": 3,
+        "needle_total": 3,
+        "short_pass": 3,
+        "short_total": 3
+      },
+      "on": {
+        "decode": 11.171814262952491,
+        "needle_pass": 3,
+        "needle_total": 3,
+        "short_pass": 0,
+        "short_total": 3
+      }
+    },
+    "mlx_lm": {
+      "off": {
+        "decode": 18.23447664582246,
+        "needle_pass": 3,
+        "needle_total": 3,
+        "short_pass": 3,
+        "short_total": 3
+      },
+      "on": {
+        "decode": 18.55539749893775,
+        "needle_pass": 3,
+        "needle_total": 3,
+        "short_pass": 0,
+        "short_total": 3
+      }
+    },
+    "m5-infer v1": {
+      "off": {
+        "decode": 38.86252228523463,
+        "needle_pass": 3,
+        "needle_total": 3,
+        "short_pass": 3,
+        "short_total": 3
+      },
+      "on": {
+        "decode": 28.75284507701921,
+        "needle_pass": 3,
+        "needle_total": 3,
+        "short_pass": 3,
+        "short_total": 3
+      }
+    }
+  }
+}

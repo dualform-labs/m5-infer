@@ -1,0 +1,34 @@
+{
+  "benchmark": "full_suite_bench (2026-04-19)",
+  "model": "Qwen 3.5 9B (4-bit)",
+  "hardware": "M5 MacBook Air / 24 GB unified / macOS 26.4",
+  "engines": {
+    "Ollama": {
+      "decode_tps": 8.9,
+      "tool_cold_s": 63.5,
+      "tool_warm_s": 64.9,
+      "needle_pass": 2,
+      "short_qa_pass": 3,
+      "session_t1_s": 63.0,
+      "session_t5_s": 0.0
+    },
+    "mlx_lm.server": {
+      "decode_tps": 17.0,
+      "tool_cold_s": 36.4,
+      "tool_warm_s": 2.27,
+      "needle_pass": 0,
+      "short_qa_pass": 0,
+      "session_t1_s": 24.0,
+      "session_t5_s": 1.57
+    },
+    "m5-infer v1.0.0": {
+      "decode_tps": 40.0,
+      "tool_cold_s": 69.3,
+      "tool_warm_s": 11.1,
+      "needle_pass": 6,
+      "short_qa_pass": 3,
+      "session_t1_s": 29.1,
+      "session_t5_s": 7.5
+    }
+  }
+}

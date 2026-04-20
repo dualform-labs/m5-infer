@@ -1,0 +1,39 @@
+# M5 MLX Inference Engine — model registry
+# Ref: SPEC section 12.2
+
+[models.main]
+name = "qwen_main"
+path = "mlx-community/Qwen3.5-9B-MLX-4bit"
+modality = "text"
+role = "main"
+load_strategy = "hot"
+supports_vision = false
+estimated_model_ram_gb = 5.6
+max_context_tokens_hard = 65536
+max_output_tokens_hard = 16384
+
+[models.sub_heavy]
+name = "gemma_heavy"
+path = "dealignai/Gemma-4-26B-A4B-JANG_4M-CRACK"
+modality = "image_text"
+role = "sub_heavy"
+load_strategy = "cold"
+supports_vision = true
+estimated_model_ram_gb = 15.5
+max_context_tokens_hard = 32768
+max_output_tokens_hard = 8192
+
+[models.sub_speed]
+name = "draft_speed"
+path = ""
+modality = "draft"
+role = "sub_speed"
+load_strategy = "cold"
+supports_vision = false
+estimated_model_ram_gb = 2.0
+max_context_tokens_hard = 8192
+max_output_tokens_hard = 4096
+
+[sub_model]
+mode = "ephemeral"
+warm_ttl_sec = 180

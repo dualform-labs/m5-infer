@@ -1,0 +1,61 @@
+m5-infer
+Copyright 2026 dualform-labs
+
+This product includes software developed at dualform-labs
+(https://github.com/dualform-labs).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+---
+
+This product bundles and/or depends on the following third-party components:
+
+1. MLX (Apple, Inc.)
+   - License: MIT
+   - https://github.com/ml-explore/mlx
+   - Core tensor computation framework for Apple Silicon.
+
+2. mlx-lm (Apple, Inc.)
+   - License: MIT
+   - https://github.com/ml-explore/mlx-lm
+   - LLM utilities for MLX (model loading, chat templates, etc.).
+
+3. FastAPI (Sebastián Ramírez)
+   - License: MIT
+   - https://github.com/tiangolo/fastapi
+   - Web framework for the OpenAI-compatible HTTP API.
+
+4. Uvicorn
+   - License: BSD-3-Clause
+   - https://github.com/encode/uvicorn
+   - ASGI server.
+
+5. Pydantic
+   - License: MIT
+   - https://github.com/pydantic/pydantic
+   - Data validation via Python type hints.
+
+6. httpx
+   - License: BSD-3-Clause
+   - https://github.com/encode/httpx
+   - HTTP client for outbound calls.
+
+7. tomlkit
+   - License: MIT
+   - https://github.com/python-poetry/tomlkit
+   - TOML configuration parsing.
+
+---
+
+Model weights (not distributed with this package) referenced for testing:
+- Qwen 3.5 / Qwen 2.5 / Qwen 3.6 by Alibaba Cloud, Apache 2.0 license
+- Llama 3 series by Meta Platforms, Inc., Meta Llama 3 Community License
+- Gemma by Google DeepMind, Gemma Terms of Use
+- Mistral models by Mistral AI, Apache 2.0 license
+
+Users are responsible for complying with each model's license when downloading
+and using weights.
