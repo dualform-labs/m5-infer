@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (macOS ${{ matrix.os }} / Python ${{ matrix.python }})
+    # macos-14 runs on Apple Silicon (M1). MLX requires Apple Silicon.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14]
+        python: ["3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: "pip"
+
+      - name: Show environment
+        run: |
+          python --version
+          uname -a
+          sysctl -n machdep.cpu.brand_string || true
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      - name: Run test suite
+        run: pytest tests/ -q --maxfail=5
+
+      - name: Import smoke test
+        run: |
+          python -c "import app; import app.backend.custom_generate; import app.engine.innovation_executor; import app.api.routes; import app.api.server; import app.core.config; import app.core.auto_tune; import app.core.hardware_profile; print(f'Import smoke OK -- m5-infer v{app.__version__}')"

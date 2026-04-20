@@ -2,9 +2,11 @@
 
 > **Extraordinary speed, extraordinary quality — an MLX-based inference engine for Apple Silicon.**
 
+[![CI](https://github.com/dualform-labs/m5-infer/actions/workflows/ci.yml/badge.svg)](https://github.com/dualform-labs/m5-infer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![MLX](https://img.shields.io/badge/MLX-0.31+-green.svg)](https://github.com/ml-explore/mlx)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%E2%80%93M5-black.svg)](https://www.apple.com/mac/)
 
 [English](#english) · [日本語](#日本語)
 
