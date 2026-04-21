@@ -29,14 +29,14 @@ m5-infer is a layer on top of the same `mlx-lm` library that powers `mlx_lm.serv
 | **Decode tok/s · thinking ON** | 18.6 | **28.8** (1.5×) | 11.2 |
 | **Thinking-ON Short QA** (3 factual) | 0 / 3 | **3 / 3** | 0 / 3 |
 | **Opus-4.7 judged output** (10-task avg, same model) | — | **5.85 / 10** | 5.28 / 10 |
-| vs mlx_lm.server (decode) | 1.0× | **2.4× faster** | 0.5× |
-| vs Ollama (decode) | 1.9× | **4.5× faster** | 1.0× |
+| vs mlx_lm.server (decode) | 1.0× | **up to 2.4× faster** | 0.5× |
+| vs Ollama (decode) | 1.9× | **up to 4.5× faster** | 1.0× |
 
 **Honest read.** m5-infer wins on sustained decode throughput, thinking-mode answer extraction, and output quality as graded by Opus 4.7. `mlx_lm.server`'s in-process prefix cache is faster for warm-hit TTFT on short sessions — different engines, different trade-offs. See the full benchmarks section further down for TTFT and session-latency numbers. Same Mac, same weights, no fine-tuning — the gaps come from the inference-engine layer.
 
 ### Overview
 
-**m5-infer** is an OpenAI-compatible inference engine designed for Apple Silicon Macs (M-series). It wraps `mlx-lm` with a layered set of training-free optimizations that target **decode throughput**, **warm TTFT**, and **long-context retrieval quality** — without sacrificing output fidelity.
+**m5-infer** is an OpenAI-compatible inference engine designed for Apple Silicon Macs (M-series). It wraps `mlx-lm` with a layered set of training-free optimizations that target **decode throughput**, **warm-path latency**, and **long-context retrieval quality** — without sacrificing output fidelity.
 
 Built around Qwen 3.5 hybrid (GatedDeltaNet + Full Attention) as the primary reference architecture, v1.0 ships with a model-family abstraction layer that supports additional families (Qwen 2.5 / Qwen 3.6, Llama 3.x, Mistral, Gemma 2/3/4) out of the box.
 
@@ -55,7 +55,7 @@ Built around Qwen 3.5 hybrid (GatedDeltaNet + Full Attention) as the primary ref
 
 ### Technical Innovations — what m5-infer does that other engines don't
 
-The 4.5× decode speedup over Ollama and the +11% Opus-judged quality lead aren't from one trick — they come from a stack of small, training-free optimizations layered on top of `mlx-lm`. Below are the ones that made the biggest measured difference. Every item is implemented in v1.0.0 today; nothing here is "planned for the future".
+The up to 4.5× decode speedup over Ollama and the +11% Opus-judged quality lead aren't from one trick — they come from a stack of small, training-free optimizations layered on top of `mlx-lm`. Below are the ones that made the biggest measured difference (peak values on long_gen decode; actual speedup varies by workload). Every item is implemented in v1.0.0 today; nothing here is "planned for the future".
 
 **Contribution legend**:
 - ✅ **Measured**: directly isolated in the bench (A/B on same machine, same model)
@@ -65,14 +65,14 @@ The 4.5× decode speedup over Ollama and the +11% Opus-judged quality lead aren'
 | # | Innovation | Decode speed | Quality | TTFT / latency |
 |:-:|:---|:---:|:---:|:---:|
 | 1 | Hybrid speculative decoding | 📊 **+35% tps** (29→40) | ⚙️ output-equivalent to greedy | — |
-| 2 | CTRSP (cross-turn state persist) | — | — | ✅ **12K cold→warm TTFT: 69s→11s (6×)** · state survives restart |
+| 2 | CTRSP (cross-turn state persist) | — | — | ✅ **12K cold→warm total latency: 69s→11s (6×)** · state survives restart |
 | 3 | Think-aware budget + escape hint | — | ✅ **+36% Opus score (4.29→5.85)**, extract 1.40→7.85 | — |
 | 4 | Needle-retrieval heuristic | — | ✅ **long-context retrieval 0/6 → 6/6** | — |
 | 5 | ALS + SSEE + PES (decode tricks) | 📊 **+10-15% tps** | — | — |
 | 6 | X5-R compiled forward + wired mem | 📊 **+40% tps** (17→24) | — | 📊 cold startup +2-5s (one-time) |
 | 7 | Hardware-aware auto-tune | 📊 **±15% on non-base chips** | — | — |
 | 8 | Model-family abstraction | — | ⚙️ same engine works on Qwen/Llama/Mistral/Gemma | — |
-| — | **Full stack combined** | ✅ **4.5× over Ollama** (8.9→40.0 tps) | ✅ **+11% over Ollama** (5.28→5.85) | ✅ **5.8× warm TTFT @ 12K** |
+| — | **Full stack combined** | ✅ **up to 4.5× over Ollama** (8.9→40.0 tps) | ✅ **+11% over Ollama** (5.28→5.85) | ✅ **up to 5.8× warm total latency @ 12K** |
 
 #### 1. Hybrid-aware speculative decoding (the hardest one)
 
@@ -351,10 +351,10 @@ All three engines run the **same `full_suite_bench`** script against **Qwen 3.5 
 
 > *mlx_lm.server leaves `reasoning` field populated instead of `content` when thinking mode is enabled internally; the bench tokenization/parsing counts it, but the bench's substring check misses the answer. We consider mlx_lm's short_qa functionally passing based on the reasoning text.
 
-> **m5-infer v1.0.0 delivers 4.5× the decode throughput of Ollama and 2.4× of mlx_lm.server** on the same model, same prompt, same machine.
+> **m5-infer v1.0.0 delivers up to 4.5× the decode throughput of Ollama and up to 2.4× of mlx_lm.server** on the same model, same prompt, same machine.
 
 ![Decode speed](docs/images/fs_decode.png)
-![Warm TTFT](docs/images/fs_warm_ttft.png)
+![Warm total latency](docs/images/fs_warm_ttft.png)
 ![Session warm (turn 5)](docs/images/fs_session_warm.png)
 ![Multi-metric comparison](docs/images/fs_multi_metric.png)
 
@@ -435,14 +435,14 @@ m5-infer は `mlx_lm.server` と同じ `mlx-lm` ライブラリの上に重ね�
 | **Decode tok/s · thinking ON** | 18.6 | **28.8** (1.5 倍) | 11.2 |
 | **Thinking-ON 短答 QA** (3 問) | 0 / 3 | **3 / 3** | 0 / 3 |
 | **Opus-4.7 判定 出力スコア** (10 task 平均、同一モデル) | — | **5.85 / 10** | 5.28 / 10 |
-| mlx_lm.server 比 (decode) | 1.0× | **2.4 倍速い** | 0.5× |
-| Ollama 比 (decode) | 1.9× | **4.5 倍速い** | 1.0× |
+| mlx_lm.server 比 (decode) | 1.0× | **最大 2.4 倍速い** | 0.5× |
+| Ollama 比 (decode) | 1.9× | **最大 4.5 倍速い** | 1.0× |
 
 **正直な読み方**: m5-infer は持続 decode 速度、thinking モードでの回答抽出、Opus 4.7 採点の出力スコアで勝ちます。`mlx_lm.server` の in-process prefix cache は短セッションの warm-hit TTFT では本当に速く、そこは負けます — エンジンごとにトレードオフが違うだけ。TTFT / セッションレイテンシの詳細数値は下の Benchmarks セクションを参照。同じ Mac、同じ重み、ファインチューニングなし — 差を生むのは推論エンジンの層です。
 
 ### 概要
 
-**m5-infer** は Apple Silicon Mac (M シリーズ) 向けに設計された OpenAI 互換 MLX 推論エンジンです。`mlx-lm` を土台に、**decode 速度・warm TTFT・長文 retrieval 品質**を同時に引き上げる学習不要の最適化を層状に積み重ね、出力品質を損なわずに性能を引き出します。
+**m5-infer** は Apple Silicon Mac (M シリーズ) 向けに設計された OpenAI 互換 MLX 推論エンジンです。`mlx-lm` を土台に、**decode 速度・warm-path レイテンシ・長文 retrieval 品質**を同時に引き上げる学習不要の最適化を層状に積み重ね、出力品質を損なわずに性能を引き出します。
 
 主要ターゲットは Qwen 3.5 hybrid (GatedDeltaNet + Full Attention) ですが、v1.0 ではモデルファミリー抽象層を介して Qwen 2.5 / Qwen 3.6 / Llama 3.x / Mistral / Gemma 2/3/4 にも対応します。
 
@@ -461,7 +461,7 @@ m5-infer は `mlx_lm.server` と同じ `mlx-lm` ライブラリの上に重ね�
 
 ### 技術革新 — m5-infer が他エンジンと違うこと
 
-Ollama 比 4.5× の decode 速度、Opus-judged 品質で +11% のリードは一発勝負ではなく、`mlx-lm` の上に積み上げた小さな training-free 最適化の集積です。以下、計測上で最も効いたものを示します。**全て v1.0.0 で実装済み、"将来計画"ではありません。**
+Ollama 比で最大 4.5× の decode 速度、Opus-judged 品質で +11% のリードは一発勝負ではなく、`mlx-lm` の上に積み上げた小さな training-free 最適化の集積です (倍率は long_gen decode でのピーク値、実際はワークロードで変動)。以下、計測上で最も効いたものを示します。**全て v1.0.0 で実装済み、"将来計画"ではありません。**
 
 **貢献度の表記**:
 - ✅ **実測**: bench で直接 A/B 比較した値 (同一マシン、同一モデル)
@@ -471,14 +471,14 @@ Ollama 比 4.5× の decode 速度、Opus-judged 品質で +11% のリードは�
 | # | Innovation | Decode 速度 | 品質 | TTFT / latency |
 |:-:|:---|:---:|:---:|:---:|
 | 1 | Hybrid speculative decoding | 📊 **+35% tps** (29→40) | ⚙️ greedy と output-equivalent | — |
-| 2 | CTRSP (cross-turn state persist) | — | — | ✅ **12K cold→warm TTFT: 69s→11s (6×)** · state survives restart |
+| 2 | CTRSP (cross-turn state persist) | — | — | ✅ **12K cold→warm total latency: 69s→11s (6×)** · state survives restart |
 | 3 | Think-aware budget + escape hint | — | ✅ **Opus score +36% (4.29→5.85)**、extract 1.40→7.85 | — |
 | 4 | Needle-retrieval heuristic | — | ✅ **長 context retrieval 0/6 → 6/6** | — |
 | 5 | ALS + SSEE + PES (decode tricks) | 📊 **+10-15% tps** | — | — |
 | 6 | X5-R compiled forward + wired mem | 📊 **+40% tps** (17→24) | — | 📊 cold 起動 +2-5s (1 回限り) |
 | 7 | Hardware-aware auto-tune | 📊 **非-base チップで ±15%** | — | — |
 | 8 | モデルファミリー抽象化 | — | ⚙️ Qwen/Llama/Mistral/Gemma で同一エンジン | — |
-| — | **全 stack 統合** | ✅ **Ollama 比 4.5×** (8.9→40.0 tps) | ✅ **Ollama 比 +11%** (5.28→5.85) | ✅ **warm TTFT 5.8× @ 12K** |
+| — | **全 stack 統合** | ✅ **Ollama 比で最大 4.5×** (8.9→40.0 tps) | ✅ **Ollama 比 +11%** (5.28→5.85) | ✅ **warm 総レイテンシ 最大 5.8× @ 12K** |
 
 #### 1. Hybrid 対応 speculative decoding (最も難しかった部分)
 
@@ -758,10 +758,10 @@ tests/              Unit tests
 
 > *mlx_lm.server は thinking モードが残ったまま回答を `reasoning` フィールドに出してしまい、bench の文字列照合はすり抜けますが、機能的には回答生成できているので pass 扱い。
 
-> **m5-infer v1.0.0 は同じモデル・同じプロンプト・同じ Mac で Ollama の 4.5 倍、mlx_lm.server の 2.4 倍の decode 速度** を達成。
+> **m5-infer v1.0.0 は同じモデル・同じプロンプト・同じ Mac で Ollama の最大 4.5 倍、mlx_lm.server の最大 2.4 倍の decode 速度** を達成。
 
 ![Decode speed](docs/images/fs_decode.png)
-![Warm TTFT](docs/images/fs_warm_ttft.png)
+![Warm total latency](docs/images/fs_warm_ttft.png)
 ![Session 5 ターン目](docs/images/fs_session_warm.png)
 ![多指標の総合比較](docs/images/fs_multi_metric.png)
 

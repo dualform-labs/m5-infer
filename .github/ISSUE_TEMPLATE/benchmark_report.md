@@ -26,7 +26,7 @@ Run one or more standard scripts and paste the output (whichever are relevant):
 ```
 # Any bench suite you have. Values we care about:
 #   - decode tok/s (long_gen 512 tokens)
-#   - Warm TTFT (2nd call with same system prompt)
+#   - Warm total latency / TTFT (2nd call with same system prompt; clarify which you measured)
 #   - Session turn-5 latency (5-turn conversation)
 #   - Short QA pass rate (thinking ON / OFF)
 #   - Needle retrieval at 4K / 12K / 32K context
@@ -36,7 +36,7 @@ Run one or more standard scripts and paste the output (whichever are relevant):
 
 If you compared against other engines on the same Mac (mlx_lm.server, Ollama, llama.cpp, etc.), include their numbers for apples-to-apples:
 
-| Engine | Decode tok/s | Warm TTFT | Notes |
+| Engine | Decode tok/s | Warm total latency | Notes |
 |:---|---:|---:|:---|
 |     |     |     |     |
 
