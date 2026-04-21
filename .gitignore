@@ -60,3 +60,17 @@ tmp/
 *.gguf
 *.bin
 models/
+
+# Private artifacts — bench raw data, bench scripts, and internal reports are NOT published
+# Public git keeps README + runtime code + operational guides only.
+app/bench/
+docs/figures/
+docs/v1.1_*.md
+docs/v1.1_*.pdf
+docs/v1.1_*.html
+docs/OPUS_QUALITY_REPORT_*.md
+docs/fullsuite_summary.json
+docs/opus_quality_summary.json
+docs/thinking_summary.json
+docs/ttft_bench_*.json
+docs/ttft_bench_results.json
