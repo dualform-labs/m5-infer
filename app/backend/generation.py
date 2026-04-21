@@ -82,6 +82,44 @@ def count_tokens(text: str | None, tokenizer) -> int:
         return 0
 
 
+# T12 FPTC — Full-Prompt Token Cache.
+# apply_chat_template + tokenize of a 12K-token prompt costs 30-100 ms every
+# request. For the common warm-reuse pattern (same messages + tools sent
+# back-to-back) we cache the tokenized result keyed by a fast bytes-level
+# fingerprint of the full request shape. Bounded LRU prevents unbounded
+# memory use. Correctness: cache key encodes every input that would affect
+# the template output, so a hit is byte-equivalent to a re-tokenize.
+import hashlib as _hashlib
+from collections import OrderedDict as _OrderedDict
+from threading import Lock as _Lock
+
+_FPTC_MAX = 32
+_fptc_cache: "_OrderedDict[str, list[int]]" = _OrderedDict()
+_fptc_lock = _Lock()
+
+
+def _fptc_key(messages: list[dict], tools: list[dict] | None, enable_thinking: bool) -> str:
+    h = _hashlib.sha256()
+    for m in messages:
+        h.update(b"\x00")
+        h.update((m.get("role") or "").encode("utf-8", errors="replace"))
+        h.update(b"\x01")
+        c = m.get("content")
+        if isinstance(c, str):
+            h.update(c.encode("utf-8", errors="replace"))
+        elif isinstance(c, list):
+            for part in c:
+                h.update(str(part).encode("utf-8", errors="replace"))
+    h.update(b"\x02tools=")
+    if tools:
+        for t in tools:
+            h.update(str(t).encode("utf-8", errors="replace"))
+            h.update(b"\x03")
+    h.update(b"\x04thinking=")
+    h.update(b"1" if enable_thinking else b"0")
+    return h.hexdigest()
+
+
 def build_prompt_tokens(
     messages: list[dict],
     tokenizer,
@@ -92,6 +130,7 @@ def build_prompt_tokens(
 
     Tries ``tokenizer.apply_chat_template`` with ``tokenize=True`` first,
     then falls back to encoding the string produced by :func:`build_prompt`.
+    T12 — Hot-path cache short-circuits identical requests.
 
     Args:
         messages: List of ``{"role": ..., "content": ...}`` dicts.
@@ -106,6 +145,15 @@ def build_prompt_tokens(
     if not messages:
         return []
 
+    # T12 FPTC — full-prompt LRU cache
+    key = _fptc_key(messages, tools, enable_thinking)
+    with _fptc_lock:
+        hit = _fptc_cache.get(key)
+        if hit is not None:
+            _fptc_cache.move_to_end(key)
+            return list(hit)  # defensive copy
+
+    result_tokens: list[int] | None = None
     if hasattr(tokenizer, "apply_chat_template"):
         try:
             kwargs: dict = {
@@ -118,20 +166,29 @@ def build_prompt_tokens(
                 kwargs["enable_thinking"] = False
             result = tokenizer.apply_chat_template(messages, **kwargs)
             if isinstance(result, list):
-                return result
+                result_tokens = result
         except Exception:
             logger.warning(
                 "apply_chat_template (tokenize=True) failed; using fallback",
                 exc_info=True,
             )
 
-    # Fallback: build the string prompt and encode it
-    prompt_str = build_prompt(messages, tokenizer, tools)
-    try:
-        return tokenizer.encode(prompt_str)
-    except Exception:
-        logger.warning("tokenizer.encode failed; returning empty list", exc_info=True)
-        return []
+    if result_tokens is None:
+        # Fallback: build the string prompt and encode it
+        prompt_str = build_prompt(messages, tokenizer, tools)
+        try:
+            result_tokens = list(tokenizer.encode(prompt_str))
+        except Exception:
+            logger.warning("tokenizer.encode failed; returning empty list", exc_info=True)
+            return []
+
+    with _fptc_lock:
+        _fptc_cache[key] = list(result_tokens)
+        _fptc_cache.move_to_end(key)
+        while len(_fptc_cache) > _FPTC_MAX:
+            _fptc_cache.popitem(last=False)
+
+    return result_tokens
 
 
 def estimate_output_tokens(

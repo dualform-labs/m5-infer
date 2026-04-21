@@ -233,9 +233,16 @@ class InnovationExecutor:
             else:
                 sys_tokens = extract_system_prompt_tokens(messages, tokenizer)
 
+            # T7 CPSB — CTRSP Short-Prompt Bypass.
+            # Saving state via np.savez_compressed on a ~52 MB per-turn payload
+            # blocks the request thread for 500-2000 ms (CPU-bound gzip) and
+            # dominates TTFT when the system prompt is short. For prompts below
+            # this threshold, the savings on re-prefill do not outweigh the
+            # per-request compression cost, so we bypass CTRSP entirely.
+            _CTRSP_MIN_SYS_TOKENS = 1024
             if sys_tokens is not None:
                 if (
-                    len(sys_tokens) > 0
+                    len(sys_tokens) >= _CTRSP_MIN_SYS_TOKENS
                     and len(sys_tokens) <= len(prompt_tokens)
                     and prompt_tokens[: len(sys_tokens)] == list(sys_tokens)
                 ):
@@ -265,7 +272,9 @@ class InnovationExecutor:
                             report = analyze_prompt_redundancy(_sys_tokens_snapshot)
                             if report.recommendations:
                                 for rec in report.recommendations:
-                                    logger.info("Context advisory (bg): %s", rec)
+                                    # T2 CPP — advisory is already background, but INFO
+                                    # still hits logging lock. DEBUG suffices for observability.
+                                    logger.debug("Context advisory (bg): %s", rec)
                             if _sys_raw_snapshot:
                                 get_tpc_cache().mark_redundancy_scanned(_sys_raw_snapshot)
                         get_background_compiler().submit("redundancy_scan", _bg_redundancy)
@@ -352,7 +361,8 @@ class InnovationExecutor:
             try:
                 from app.innovation.rdms import rdms_speculative_generate
                 _rdms_k = get_settings().innovation.rdms_num_draft
-                logger.info("InnovationExecutor: using RDMS path (resident draft, k=%d)", _rdms_k)
+                # T2 CPP — per-request routing log moved to DEBUG.
+                logger.debug("InnovationExecutor: using RDMS path (resident draft, k=%d)", _rdms_k)
                 for chunk in rdms_speculative_generate(
                     main_model=model,
                     main_tokenizer=tokenizer,

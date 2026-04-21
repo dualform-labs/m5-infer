@@ -35,6 +35,7 @@ from app.engine.cache_manager import CacheManager
 from app.engine.supervisor import Supervisor
 from app.engine.innovation_executor import InnovationExecutor
 from app.engine.context_compressor import ContextCompressor
+from app.engine.oirc import get_oirc, is_oirc_eligible, CachedChunk
 from app.planner.request_planner import RequestPlanner
 from app.backend.generation import build_prompt_tokens
 from app.core.logging import get_logger, MetricsLogger
@@ -83,12 +84,16 @@ def _resolve_thinking(messages: list[dict], user_setting: bool) -> bool:
     if "ultrathink" in last_lower:
         return True
 
+    # T10 — Respect explicit user intent. When the caller passed
+    # enable_thinking=false we must not flip it ON via server-side
+    # heuristics; doing so causes TTFT to include the full thinking
+    # generation (2-10x observed latency). The needle-retrieval heuristic
+    # below is advisory only when the user left thinking at its default.
+    if not user_setting:
+        return False
+
     # Rule 1b: Needle-retrieval heuristic — long context + short user query.
-    # Detection:
-    #   - sum(system msg chars) > 3000 (≈ 750+ tokens), AND
-    #   - user message < 200 chars, AND
-    #   - user message looks like a question (contains "?" or starts with what/which/where)
-    # If matched, force thinking ON to avoid safety-refusal on long contexts.
+    # Only consulted when the caller did NOT explicitly set thinking=false.
     try:
         sys_chars = sum(
             len(m.get("content") or "") for m in messages if m.get("role") == "system"
@@ -101,17 +106,13 @@ def _resolve_thinking(messages: list[dict], user_setting: bool) -> bool:
                         "list", "name", "tell me"))
             )
             if question_like:
-                logger.info(
+                logger.debug(
                     "_resolve_thinking: needle-retrieval heuristic → thinking ON "
                     "(sys=%d chars, user=%d chars)", sys_chars, len(last_user),
                 )
                 return True
     except Exception:
         pass
-
-    # Rule 2: User explicitly disabled thinking
-    if not user_setting:
-        return False
 
     # Rule 3: Very short simple questions → OFF
     if len(last_user) < 30 and "?" in last_user:
@@ -313,7 +314,10 @@ async def chat_completions(request: ChatCompletionRequest):
             status_code=429, detail=plan.reject_reason or "Request rejected"
         )
 
-    logger.info(
+    # T2 CPP — route-level plan summary moved to DEBUG (was INFO).
+    # Redundant with the InnovationExecutor summary logged AFTER generation
+    # completes; keeping the post-hoc summary is enough for observability.
+    logger.debug(
         "Plan: model=%s speed=%s ctrsp=%s fold=%s max_out=%d",
         plan.routing.selected_model,
         plan.speed.speed_priority.value,
@@ -325,11 +329,49 @@ async def chat_completions(request: ChatCompletionRequest):
     # ── Execute via InnovationExecutor (plan decisions are APPLIED here) ─
     start_time = time.perf_counter()
 
+    # T14-OIRC — Opt-In Response Cache.
+    # Consulted ONLY when the caller supplies both `idempotency_key` and a
+    # positive `cache_ttl_ms`. Without both, every request takes the normal
+    # generation path — which is what an agent issuing "re-check current
+    # state" expects. Stochastic and tool-using requests short-circuit before
+    # we ever touch the cache.
+    _oirc = None
+    _oirc_model_id = ""
+    _oirc_cached = None
+    if is_oirc_eligible(
+        idempotency_key=request.idempotency_key,
+        cache_ttl_ms=request.cache_ttl_ms,
+        temperature=0.0,
+        top_p=1.0,
+        max_tokens=request.max_tokens,
+        tools=request.tools,
+    ):
+        _oirc = get_oirc()
+        _oirc_model_id = model_manager.get_current_model_id()
+        _oirc_cached = _oirc.get(
+            _oirc_model_id,
+            request.idempotency_key,
+            prompt_tokens,
+            request.max_tokens,
+            enable_thinking,
+        )
+
     if request.stream:
+        if _oirc_cached is not None:
+            return StreamingResponse(
+                _stream_from_oirc(request_id, created, request.model, _oirc_cached),
+                media_type="text/event-stream",
+            )
         return StreamingResponse(
             _stream_via_executor(
                 request_id, created, plan, messages_dicts, prompt_tokens,
                 request, session,
+                oirc=_oirc,
+                oirc_model_id=_oirc_model_id,
+                oirc_idempotency_key=request.idempotency_key,
+                oirc_max_tokens=request.max_tokens,
+                oirc_enable_thinking=enable_thinking,
+                oirc_ttl_ms=request.cache_ttl_ms,
             ),
             media_type="text/event-stream",
         )
@@ -423,8 +465,50 @@ async def chat_completions(request: ChatCompletionRequest):
     )
 
 
+async def _stream_from_oirc(request_id, created, model_name, cached):
+    """T14-OIRC — replay a previously cached response for an opt-in idempotent
+    call. Every chunk is exactly what the model emitted on the original run.
+    """
+    first = True
+    for cc in cached.chunks:
+        if not cc.text and cc.finish_reason is None:
+            continue
+        if first and cc.text:
+            sse_chunk = ChatCompletionChunk(
+                id=request_id, created=created, model=model_name,
+                choices=[ChatCompletionChunkChoice(
+                    delta=ChatCompletionChunkDelta(role="assistant", content=cc.text),
+                )],
+            )
+            first = False
+        else:
+            sse_chunk = ChatCompletionChunk(
+                id=request_id, created=created, model=model_name,
+                choices=[ChatCompletionChunkChoice(
+                    delta=ChatCompletionChunkDelta(content=cc.text),
+                )],
+            )
+        yield f"data: {sse_chunk.model_dump_json()}\n\n"
+    final_reason = "stop"
+    for cc in reversed(cached.chunks):
+        if cc.finish_reason:
+            final_reason = cc.finish_reason
+            break
+    final = ChatCompletionChunk(
+        id=request_id, created=created, model=model_name,
+        choices=[ChatCompletionChunkChoice(
+            delta=ChatCompletionChunkDelta(),
+            finish_reason=final_reason,
+        )],
+    )
+    yield f"data: {final.model_dump_json()}\n\n"
+    yield "data: [DONE]\n\n"
+
+
 async def _stream_via_executor(
-    request_id, created, plan, messages_dicts, prompt_tokens, request, session
+    request_id, created, plan, messages_dicts, prompt_tokens, request, session,
+    oirc=None, oirc_model_id="", oirc_idempotency_key="",
+    oirc_max_tokens=0, oirc_enable_thinking=False, oirc_ttl_ms=0,
 ):
     """SSE streaming via InnovationExecutor.
 
@@ -435,12 +519,16 @@ async def _stream_via_executor(
         .close()'d so MLX releases its wired_limit and cache state promptly.
       * Session is updated only after successful generation — partial writes
         on abort are discarded to avoid corrupting next turn's context.
+      * T14-OIRC — when the caller supplied an idempotency_key + cache_ttl_ms,
+        the full SSE chunk list is committed to the cache after a clean
+        completion, bounded by ttl_ms.
     """
     text_parts: list[str] = []
     first = True
     last_finish_reason: str | None = None
     completed = False
     gen = None
+    _oirc_chunks: list[CachedChunk] = []
 
     await _generation_lock.acquire()
     try:
@@ -481,6 +569,12 @@ async def _stream_via_executor(
                     )
 
                 text_parts.append(chunk.text)
+                if oirc is not None:
+                    _oirc_chunks.append(CachedChunk(
+                        text=chunk.text,
+                        finish_reason=chunk.finish_reason,
+                        generation_tokens=getattr(chunk, "generation_tokens", 0),
+                    ))
                 yield f"data: {sse_chunk.model_dump_json()}\n\n"
             completed = True
         except asyncio.CancelledError:
@@ -501,6 +595,28 @@ async def _stream_via_executor(
             )
             yield f"data: {final.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"
+
+            # T14-OIRC — commit the replay record now that generation finished
+            # cleanly. The caller must have opted in; the cache is never
+            # populated by default.
+            if oirc is not None and _oirc_chunks and oirc_ttl_ms:
+                _oirc_chunks[-1] = CachedChunk(
+                    text=_oirc_chunks[-1].text,
+                    finish_reason=last_finish_reason or "stop",
+                    generation_tokens=_oirc_chunks[-1].generation_tokens,
+                )
+                try:
+                    oirc.put(
+                        oirc_model_id,
+                        oirc_idempotency_key,
+                        prompt_tokens,
+                        oirc_max_tokens,
+                        oirc_enable_thinking,
+                        _oirc_chunks,
+                        oirc_ttl_ms,
+                    )
+                except Exception:
+                    logger.debug("OIRC put failed", exc_info=True)
     finally:
         if gen is not None:
             try:

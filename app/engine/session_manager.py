@@ -30,7 +30,8 @@ class SessionManager:
         new_id = session_id or str(uuid.uuid4())
         session = SessionState(session_id=new_id)
         self._sessions[new_id] = session
-        logger.info(f"Created new session: {new_id}")
+        # T2 CPP — session lifecycle logs moved to DEBUG (fires per request).
+        logger.debug(f"Created new session: {new_id}")
         return session
 
     def get(self, session_id: str) -> SessionState | None:
@@ -65,7 +66,7 @@ class SessionManager:
         ]
         for sid in expired:
             del self._sessions[sid]
-            logger.info(f"Expired session: {sid}")
+            logger.debug(f"Expired session: {sid}")
         return len(expired)
 
     def list_sessions(self) -> list[str]:

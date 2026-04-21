@@ -43,7 +43,34 @@ class DraftModelLoader:
             self._model = None
             self._tokenizer = None
             self._path = ""
+            # T15 LDL — pending path remembers what to load on first speculative
+            # call, without occupying GPU memory during prefill-only workloads.
+            self._pending_path = ""
             self._initialized = True
+
+    def configure(self, model_path: str) -> None:
+        """T15 LDL — Register the draft path WITHOUT actually loading.
+
+        Reserves ~420 MB of GPU memory for prefill / long-context throughput.
+        The model is transparently materialized on the first speculative
+        decode request via ensure_loaded().
+        """
+        if not model_path:
+            return
+        if self._model is not None and self._path == model_path:
+            return  # already loaded
+        self._pending_path = model_path
+        logger.info("RDMS: draft configured (lazy, path=%s)", model_path)
+
+    def ensure_loaded(self) -> bool:
+        """T15 LDL — Load the pending draft on demand. Called from the
+        speculative-decode hot path before the first draft invocation.
+        """
+        if self._model is not None:
+            return True
+        if self._pending_path:
+            return self.load(self._pending_path)
+        return False
 
     def load(self, model_path: str) -> bool:
         """Load draft model from HuggingFace path.
@@ -63,6 +90,7 @@ class DraftModelLoader:
             self._model = model
             self._tokenizer = tokenizer
             self._path = model_path
+            self._pending_path = ""
             logger.info("RDMS: draft model loaded successfully (%s)", model_path)
             return True
         except Exception:

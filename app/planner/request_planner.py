@@ -110,7 +110,9 @@ class RequestPlanner:
             prefer_quality=prefer_quality,
         )
 
-        logger.info(
+        # T2 CPP — per-request plan summary moved to DEBUG (was INFO).
+        # Emits on every request; JSON formatter was ~1-3ms on critical path.
+        logger.debug(
             "Plan created: model=%s, speed=%s, ctrsp=%s, fold=%s, reject=%s",
             routing.selected_model,
             speed.speed_priority.value,

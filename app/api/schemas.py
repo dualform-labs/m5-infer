@@ -34,6 +34,11 @@ class ChatCompletionRequest(BaseModel):
     # Phase D FPQM — convenience flag that maps to kv_precision="bf16" + lossless
     # flags (disables speculative, forces greedy verify). Takes precedence.
     prefer_quality: bool = False
+    # T14-OIRC — opt-in response cache. Both fields must be provided for the
+    # server to consider a cached replay. Without them, every call is a fresh
+    # model execution (agent re-check semantics preserved by default).
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    cache_ttl_ms: int | None = Field(default=None, ge=0, le=60_000)
 
 
 class ChatCompletionChoice(BaseModel):
