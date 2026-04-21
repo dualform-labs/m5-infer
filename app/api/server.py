@@ -195,7 +195,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="M5 MLX Inference Engine",
-        version="0.1.0",
+        version=__import__("app").__version__,
         lifespan=lifespan,
     )
     app.include_router(router)

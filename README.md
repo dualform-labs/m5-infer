@@ -285,7 +285,7 @@ Then point `main_path` in `engine.toml` at the repo ID — m5-infer will find th
 | Chip | Apple Silicon M1 | **M5 series** (Base / Pro / Max — Ultra not released) |
 | Unified memory | **16 GB** (untested, small models only) | **24 GB+** for 9B-class 4-bit models |
 | macOS | **26.4** | 26.4 or newer |
-| Python | 3.11 | 3.12 |
+| Python | 3.11 | 3.12 / 3.13 |
 
 The engine detects your chip at startup and auto-tunes defaults for that
 tier — entry (M1 base) to ultra (M5 Ultra). See `app/core/auto_tune.py`
@@ -692,7 +692,7 @@ git clone https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit
 | チップ | Apple Silicon M1 | **M5 シリーズ** (Base / Pro / Max。Ultra は未発売) |
 | 統合メモリ | **16 GB** (未検証、小型モデル用) | **24 GB 以上** (9B クラス 4bit モデル向け) |
 | macOS | **26.4** | 26.4 以降 |
-| Python | 3.11 | 3.12 |
+| Python | 3.11 | 3.12 / 3.13 |
 
 起動時にチップを検出し、そのチップ階層 (entry = M1 base 〜 ultra = M5 Ultra) に
 最適な設定を自動適用します。階層ごとのポリシーは `app/core/auto_tune.py`
