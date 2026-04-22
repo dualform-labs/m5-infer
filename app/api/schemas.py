@@ -104,6 +104,11 @@ class HealthResponse(BaseModel):
 class ModelPullRequest(BaseModel):
     """Request to download and load a model from HuggingFace."""
     model: str  # HuggingFace repo ID, e.g. "mlx-community/Llama-3.2-3B-Instruct-4bit"
+    # v1.1.2: when true (or when Accept: text/event-stream is sent), the endpoint
+    # streams per-tick progress chunks as newline-delimited JSON (SSE). When
+    # false, the endpoint blocks until download+load completes and returns a
+    # single JSON response (v1.1.0 behavior).
+    stream: bool = False
 
 class ModelPullResponse(BaseModel):
     status: str  # "loaded", "already_loaded", "error"

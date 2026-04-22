@@ -132,6 +132,10 @@ def setup_logging(level: str = "INFO") -> None:
 
     Calling this more than once is safe — it replaces the existing
     handlers on the root logger rather than stacking duplicates.
+
+    Third-party HTTP / download loggers (``huggingface_hub._client``,
+    ``httpx``, ``urllib3``) are forced to WARNING so their per-request
+    chatter does not drown out engine events at the default INFO level.
     """
     root = logging.getLogger()
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
@@ -142,6 +146,20 @@ def setup_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(JSONFormatter())
     root.addHandler(handler)
+
+    # v1.1.2: silence the noisy HuggingFace / HTTP clients at INFO level.
+    # Set them to WARNING so only real problems surface, keeping the engine's
+    # own INFO-level events readable in `m5-infer start` stdout tails.
+    for noisy in (
+        "huggingface_hub._client",
+        "huggingface_hub._http",
+        "huggingface_hub.file_download",
+        "huggingface_hub.utils._http",
+        "httpx",
+        "httpcore",
+        "urllib3",
+    ):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:

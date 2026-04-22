@@ -10,7 +10,7 @@ import asyncio
 import time
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.schemas import (
@@ -199,38 +199,197 @@ async def list_models() -> ModelListResponse:
     return ModelListResponse(data=models)
 
 
+def _hf_cache_size_bytes(repo_id: str) -> int:
+    """On-disk size of a HF cache entry (sum of blobs/)."""
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE
+    except Exception:
+        return 0
+    from pathlib import Path
+    folder = Path(HF_HUB_CACHE) / ("models--" + repo_id.replace("/", "--"))
+    if not folder.is_dir():
+        return 0
+    total = 0
+    blobs = folder / "blobs"
+    if blobs.is_dir():
+        for b in blobs.iterdir():
+            try:
+                total += b.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def _classify_pull_error(exc: BaseException) -> tuple[str, str]:
+    """Return (short_code, human_message) for a snapshot_download/load failure."""
+    s = str(exc)
+    sl = s.lower()
+    if "429" in s or "rate" in sl and "limit" in sl:
+        return (
+            "rate_limited",
+            f"HuggingFace rate-limited the download. Set HF_TOKEN to lift the limit: {s}",
+        )
+    if "no space" in sl or "disk" in sl and "full" in sl or "enospc" in sl:
+        return ("disk_full", f"Not enough disk space to store the model: {s}")
+    if "401" in s or "403" in s or "unauthorized" in sl or "forbidden" in sl:
+        return (
+            "auth",
+            f"HuggingFace auth failed. Set HF_TOKEN if the repo is gated: {s}",
+        )
+    if "getaddrinfo" in sl or "network" in sl or "timed out" in sl or "timeout" in sl:
+        return ("network", f"Network error contacting HuggingFace: {s}")
+    if "metal" in sl and ("memory" in sl or "oom" in sl):
+        return (
+            "hardware_oom",
+            f"Model too large for the available Metal memory: {s}. "
+            f"Try a smaller variant or raise [memory] headroom in engine.toml.",
+        )
+    return ("error", s)
+
+
 @router.post("/v1/models/pull")
-async def pull_model(request: ModelPullRequest) -> ModelPullResponse:
+async def pull_model(request: ModelPullRequest, http_request: Request):
     """Download and load a model from HuggingFace.
 
-    Any MLX-compatible model can be loaded by its HuggingFace repo ID.
-    The swap is serialized — concurrent generation requests block until
-    the swap completes (or fails).
+    Supports two modes:
+
+    1. **Synchronous** (default, v1.1.0-compatible): blocks until download
+       and load complete, then returns a single ``ModelPullResponse``.
+    2. **Streaming** (v1.1.2+): set ``stream=true`` or send
+       ``Accept: text/event-stream``. Returns newline-delimited JSON
+       chunks with per-tick progress (``bytes_dl``, ``mbps``, ``eta_s``)
+       during the download phase, then a final ``{"status": "..."}`` chunk
+       on completion.
+
+    In streaming mode the master lock is released during the HuggingFace
+    network phase, so ``/health`` and chat against the currently-loaded
+    model stay responsive while a download runs. The master lock is
+    reacquired only for the MLX load / backend swap at the end.
     """
     if model_manager is None:
         raise HTTPException(status_code=503, detail="Server not initialized")
 
-    # Take both locks: block new generations and wait for in-flight ones.
-    async with _model_swap_lock:
-        async with _generation_lock:
+    # Determine mode. Client can opt-in via body flag OR Accept header.
+    wants_stream = bool(request.stream)
+    try:
+        accept = http_request.headers.get("accept", "")
+        if "text/event-stream" in accept:
+            wants_stream = True
+    except Exception:
+        pass
+
+    repo = request.model
+
+    if not wants_stream:
+        # v1.1.0-compatible synchronous path
+        async with _model_swap_lock:
+            async with _generation_lock:
+                try:
+                    result = await model_manager.load_model(repo)
+                    if executor is not None:
+                        executor.set_backend(model_manager.get_backend())
+                        executor.initialize_innovations()
+                    return ModelPullResponse(
+                        status=result["status"],
+                        model=repo,
+                        memory=result.get("memory"),
+                    )
+                except Exception as e:
+                    logger.exception("Failed to pull model: %s", repo)
+                    code, msg = _classify_pull_error(e)
+                    raise HTTPException(
+                        status_code=502,
+                        detail={"error_code": code, "error": msg, "model": repo},
+                    )
+
+    # Streaming mode: download without master lock, load with master lock.
+    async def event_stream():
+        import json as _json
+        import threading as _threading
+        import time as _time
+
+        done = _threading.Event()
+        err: dict = {}
+
+        def _worker():
             try:
-                result = await model_manager.load_model(request.model)
-                if executor is not None:
-                    executor.set_backend(model_manager.get_backend())
-                    executor.initialize_innovations()
-                return ModelPullResponse(
-                    status=result["status"],
-                    model=request.model,
-                    memory=result.get("memory"),
-                )
+                from huggingface_hub import snapshot_download
+                snapshot_download(repo_id=repo)
             except Exception as e:
-                logger.exception("Failed to pull model: %s", request.model)
-                # Return an actual HTTP error so clients don't think the swap
-                # succeeded when the model is now broken/absent.
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Failed to load model {request.model}: {e}",
-                )
+                code, msg = _classify_pull_error(e)
+                err["code"] = code
+                err["msg"] = msg
+            finally:
+                done.set()
+
+        t0 = _time.perf_counter()
+        last_size = _hf_cache_size_bytes(repo)
+        last_ts = t0
+
+        # Kick off download in a background thread; meanwhile we poll cache size.
+        thr = _threading.Thread(target=_worker, name="m5-hf-pull", daemon=True)
+        thr.start()
+        yield _json.dumps({
+            "phase": "download_start", "model": repo, "bytes_dl": last_size,
+        }) + "\n"
+
+        while not done.is_set():
+            await asyncio.sleep(1.0)
+            now = _time.perf_counter()
+            size = _hf_cache_size_bytes(repo)
+            dt = now - last_ts
+            mbps = ((size - last_size) / (1 << 20)) / dt if dt > 0 else 0
+            yield _json.dumps({
+                "phase": "downloading",
+                "model": repo,
+                "bytes_dl": size,
+                "mbps": round(mbps, 2),
+                "elapsed_s": round(now - t0, 1),
+            }) + "\n"
+            last_size = size
+            last_ts = now
+
+        thr.join(timeout=1.0)
+
+        if err:
+            yield _json.dumps({
+                "phase": "error",
+                "error_code": err["code"],
+                "error": err["msg"],
+                "model": repo,
+            }) + "\n"
+            return
+
+        # Download complete — now take the master lock for the MLX load phase.
+        yield _json.dumps({
+            "phase": "load_start",
+            "model": repo,
+            "bytes_dl": _hf_cache_size_bytes(repo),
+        }) + "\n"
+
+        try:
+            async with _model_swap_lock:
+                async with _generation_lock:
+                    result = await model_manager.load_model(repo)
+                    if executor is not None:
+                        executor.set_backend(model_manager.get_backend())
+                        executor.initialize_innovations()
+        except Exception as e:
+            logger.exception("Failed to load model after download: %s", repo)
+            code, msg = _classify_pull_error(e)
+            yield _json.dumps({
+                "phase": "error", "error_code": code, "error": msg, "model": repo,
+            }) + "\n"
+            return
+
+        yield _json.dumps({
+            "phase": "success",
+            "status": result["status"],
+            "model": repo,
+            "memory": result.get("memory"),
+        }) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @router.post("/v1/chat/completions")
