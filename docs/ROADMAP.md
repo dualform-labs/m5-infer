@@ -23,7 +23,7 @@ The engine already ships `moderate` / `aggressive` / `extreme` memory modes, but
 
 - **Bench reproduction on M5 Pro / Max / Studio** — reference data points for `extreme` mode with larger draft models (3B, 7B) and bigger CTRSP LRU.
 - **48 GB+ memory profiles** — unlock larger resident models + longer prefix caches.
-- _User-contributed bench results welcome_ — open an issue with `full_suite_bench.py` output from your hardware.
+- _User-contributed bench results welcome_ — open an issue with your own workload metrics (decode tok/s, warm total latency, retrieval accuracy etc.) and the hardware configuration; a short OpenAI-compatible probe against `/v1/chat/completions` is sufficient.
 
 ## v1.2 — Additional decode-path optimizations (research)
 
