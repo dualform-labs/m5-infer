@@ -2,6 +2,45 @@
 
 All notable changes to **m5-infer** will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.4] — 2026-04-22
+
+Chat CLI polish for real-world daily use.
+
+### Fixed
+
+- **CJK / Japanese editing in `m5-infer chat`.** The built-in Python
+  `input()` treated each full-width character as 1 column wide, so
+  pressing Backspace after a Japanese character removed the codepoint
+  but left a half-width gap where the character used to be. `chat`
+  now uses `prompt_toolkit.PromptSession` for the input loop, which
+  handles wide-character cursor movement correctly. Arrow-up / arrow-
+  down also recalls prior prompts from a persistent history stored
+  under the XDG data dir.
+- **No practical input-length limit.** Some terminal TTY buffers cap
+  raw-line input at ~1024 bytes; `prompt_toolkit` bypasses that.
+
+### Added
+
+- **`/attach <path>` command.** Stages a text file to be prepended to
+  your next turn, wrapped as `<file path="...">…</file>` with a fenced
+  code block. Multi-attach is supported (each `/attach` queues another
+  file). Binary / non-UTF-8 files and files larger than 200 KB are
+  rejected with a human-readable error. New `/attach` (no arg) lists
+  the pending attachments; `/detach` clears them.
+
+### Dependencies
+
+- Added `prompt_toolkit>=3.0.0`. Pure Python, ~300 KB install, widely
+  used (IPython, pdb++). No engine-path impact — the server never
+  imports it.
+
+### Migration
+
+No action. `pip install --upgrade m5-infer` picks up both the dep and
+the new chat behavior.
+
+---
+
 ## [1.1.3] — 2026-04-22
 
 Hot-fix for two P1 issues Codex review surfaced against v1.1.2 after the
