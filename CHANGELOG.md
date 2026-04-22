@@ -30,7 +30,7 @@ First public release.
 - **RDMS** — resident draft-model speculative decoding (hybrid + pure transformer paths, double-verify safety).
 
 ### Compatibility
-- Python 3.11 and 3.12.
+- Python 3.11, 3.12, and 3.13.
 - Apple Silicon (M1 / M2 / M3 / M4 / M5).
 - `mlx >= 0.31.1`, `mlx-lm >= 0.21.0`.
 

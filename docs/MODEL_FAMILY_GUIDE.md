@@ -180,8 +180,8 @@ draft_path = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
 1. `pytest tests/test_core/test_model_family.py -v` で unit tests pass
 2. `pytest tests/ -q` で全体 regression なし
 3. Server 起動 + `/health` で family が正しく検出されているか確認
-4. `app/bench/full_suite_bench.py` で decode / needle / warm 総レイテンシ計測 (full_suite の tool_warm は end-to-end 生成完了時間、厳密 TTFT は `app/bench/ttft_bench.py` 側)
-5. Opus rubric bench で品質測定 (別途 API 経由)
+4. スモークベンチで decode / needle / 長 prompt のレイテンシを実測し、回帰していないことを確認 (社内ベンチスクリプト `app/bench/` は公開パッケージには含まれないため、各自の OpenAI 互換クライアントで同等のプローブを送って検証可能)
+5. 品質回帰が気になる場合は Opus など外部 LLM で採点 (任意)
 
 ---
 
