@@ -202,6 +202,52 @@ v1.1.1 and later respect `$M5_INFER_DATA_DIR` / `$XDG_DATA_HOME` for
 snapshot storage; see `docs/ROADMAP.md` for the config / data-path
 resolution order.
 
+### Upgrading
+
+m5-infer does not auto-update — you run a single command, same as any
+other Python tool:
+
+```bash
+m5-infer stop                    # if a detached server is running
+pip install --upgrade m5-infer
+m5-infer start                   # pick up the new version
+m5-infer --version               # confirm
+```
+
+**What gets updated automatically**
+- The `m5-infer` package itself (all code + the bundled default `engine.toml` / `models.toml` templates).
+
+**What is preserved across upgrades**
+- Downloaded model weights (HuggingFace cache under `~/.cache/huggingface/`).
+- Your local `./configs/engine.toml` if you ran `m5-infer init` — your edits survive.
+- CTRSP snapshots, logs, and other runtime state under `$XDG_DATA_HOME/m5-infer/` (default `~/.local/share/m5-infer/`).
+
+**When to wipe CTRSP cache** — if release notes for a minor version
+change ("v1.1 → v1.2") flag a CTRSP schema change:
+
+```bash
+rm -rf ~/.local/share/m5-infer/state/ctrsp/
+```
+
+Within the same minor series (v1.1.x) the cache format is stable and
+no action is needed.
+
+**New config keys** — if a new release adds a setting you want to
+customize, re-run `m5-infer init` in a temp directory and diff:
+
+```bash
+(cd /tmp && m5-infer init && diff configs/engine.toml ~/your-project/configs/engine.toml)
+```
+
+Your existing file is never overwritten — you merge manually.
+
+**Downgrading** — pin any prior version with `pip install
+m5-infer==1.1.3`. All 1.1.x tags remain on PyPI.
+
+**Checking for new releases** — until auto-notify ships (v1.2),
+periodically run `pip index versions m5-infer`, or watch the GitHub
+repo for Release notifications.
+
 #### HTTP endpoints (OpenAI-compatible)
 
 Once the server is up, these endpoints are available on `http://127.0.0.1:11436`:
@@ -628,6 +674,45 @@ v1.1.1 以降、CTRSP スナップショット等の保存先は `$M5_INFER_DATA
 ./chat.sh              # 対話型 CLI (サーバー起動中にのみ動作)
 ./chat.sh mlx-community/Llama-3.2-3B-Instruct-4bit   # モデルを指定して起動
 ```
+
+### アップグレード
+
+m5-infer は auto-update しません。他の Python ツール同様、コマンド 1 本で済みます:
+
+```bash
+m5-infer stop                    # バックグラウンドサーバが動いていれば止める
+pip install --upgrade m5-infer
+m5-infer start                   # 新バージョンで起動
+m5-infer --version               # 確認
+```
+
+**自動で更新されるもの**
+- `m5-infer` パッケージ本体 (コード + bundled `engine.toml` / `models.toml` デフォルト)
+
+**アップグレードを跨いで保持されるもの**
+- ダウンロード済みモデル重み (HuggingFace cache: `~/.cache/huggingface/`)
+- `m5-infer init` で作った `./configs/engine.toml` — あなたの編集はそのまま
+- CTRSP スナップショット、ログ、その他のランタイム状態 (`$XDG_DATA_HOME/m5-infer/`、デフォルトは `~/.local/share/m5-infer/`)
+
+**CTRSP キャッシュを消すタイミング** — release notes で minor バージョンの変更 ("v1.1 → v1.2") が CTRSP スキーマ変更を通知した時:
+
+```bash
+rm -rf ~/.local/share/m5-infer/state/ctrsp/
+```
+
+同じ minor 系列 (v1.1.x) 内ではキャッシュ形式は安定、何もする必要なし。
+
+**新設定キー** — 新しい release が調整可能な設定を追加した場合、tmp ディレクトリで `m5-infer init` を実行して diff:
+
+```bash
+(cd /tmp && m5-infer init && diff configs/engine.toml ~/your-project/configs/engine.toml)
+```
+
+既存ファイルは上書きされません。手動でマージしてください。
+
+**ダウングレード** — 任意の旧バージョンを `pip install m5-infer==1.1.3` で pin。1.1.x の全タグは PyPI に残ります。
+
+**新 release のチェック** — auto-notify が v1.2 で入るまでは、`pip index versions m5-infer` を定期的に実行するか、GitHub repo の Release 通知を watch してください。
 
 #### HTTP エンドポイント (OpenAI 互換)
 
