@@ -99,6 +99,10 @@ class HealthResponse(BaseModel):
     mmrs: dict | None = None   # resident registry stats
     mrpb: dict | None = None   # request-class scheduler stats
     mtab: dict | None = None   # tier cache hit stats
+    # v1.1.2 additions (optional, present on newer servers)
+    version: str | None = None
+    uptime_s: float | None = None
+    requests_served: int | None = None
 
 
 class ModelPullRequest(BaseModel):

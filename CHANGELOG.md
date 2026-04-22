@@ -2,6 +2,79 @@
 
 All notable changes to **m5-infer** will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] — 2026-04-22
+
+Daily-driver CLI + first class download UX + memory-policy polish. No
+engine-level changes — purely runtime / operator ergonomics.
+
+### Added
+
+- **`m5-infer` CLI subcommands** (7 new): `chat`, `pull`, `bench`, `stop`,
+  `status`, `cache (list|clear)`, `models (--loaded|--cached)`. Replaces
+  hand-rolled invocations like `python -m app.cli.chat` and the `lsof | kill`
+  dance. Every subcommand speaks to the already-running server over the HTTP
+  API, so `m5-infer chat` now Just Works regardless of install path.
+- **Streaming `/v1/models/pull`.** Send `"stream": true` or
+  `Accept: text/event-stream` to get newline-delimited JSON chunks:
+  `download_start` → `downloading {bytes_dl, mbps, elapsed_s}` → `load_start`
+  → `success`. Errors arrive as `{phase: "error", error_code, error}`.
+  Synchronous POST still works for v1.1.0 / v1.1.1 clients.
+- **Master-lock release during HF download.** The download thread in
+  streaming mode runs without the inference lock, so `/health` and chat
+  against the already-loaded model stay responsive while a multi-GB pull
+  is underway. The lock is reacquired only for the MLX load + backend swap
+  at the end.
+- **`POST /v1/models/load`.** Hot-swap to a model already present in the
+  HF cache without touching the network. Returns 404 with `error_code:
+  not_cached` (plus a pull hint) when the repo isn't on disk. Drops
+  stale in-memory CTRSP snapshots before swapping so old state can't
+  collide with the new model-id.
+- **Metal OOM classification.** Pull/load failures now return structured
+  `error_code` (rate_limited, disk_full, auth, network, hardware_oom,
+  error). `hardware_oom` specifically returns 503 ("capacity exceeded")
+  so clients can distinguish "too big for this Mac" from generic 502s.
+- **`GET /v1/stats`.** Lightweight metrics snapshot: MTAB hit-rate, OIRC
+  stats, CTRSP on-disk size, loaded model, memory. For ad-hoc monitoring
+  and `m5-infer status`. Prometheus exposition remains v1.3+ material.
+- **`/health` now includes `version`, `uptime_s`, and `requests_served`**
+  (additive; older clients still parse the response fine).
+
+### Changed
+
+- **Default Metal headroom loosened.** `auto_tune._wired_limit_from_memory`
+  replaces the old flat 6/8 GB constant with a per-tier curve:
+
+        ≤16 GB →  4 GB headroom  (was 6 → 12 GB Metal limit)
+        ≤24 GB →  4 GB           (was 6 → 20 GB limit, fits 35B A3B-4bit)
+        ≤32 GB →  5 GB           (was 6)
+        ≤64 GB →  6 GB           (was 8)
+        >64 GB →  7 GB           (was 8)
+
+  On a 24 GB MacBook Air base the Metal limit goes 18 GB → **20 GB**,
+  which lets Qwen 3.6-35B A3B-4bit (~18.6 GB) load at default settings.
+- **`[memory]` config overrides.** New fields `metal_limit_gb` (absolute)
+  and `headroom_gb` (subtract from total) in engine.toml, plus matching
+  env vars `$M5_INFER_METAL_LIMIT_GB` / `$M5_INFER_METAL_HEADROOM_GB`.
+  Startup log now tells operators exactly which knob produced the Metal
+  limit:
+  `Metal memory_limit set to 20480 MB (20.0 GB on 24 GB total) — source:
+  auto_tune per-tier default`
+- **Aggressive-limit warning.** When effective headroom drops below 3 GB
+  the boot log emits a WARNING reminding operators that macOS may swap
+  under memory pressure.
+- **HuggingFace HTTP client log spam → WARNING.** `huggingface_hub._client`,
+  `_http`, `file_download`, `httpx`, `httpcore`, and `urllib3` loggers are
+  now at WARNING level in `setup_logging()`. Previous INFO-level spew was
+  interleaving with every m5-infer log line during downloads.
+
+### Migration
+
+No breaking changes. `pip install --upgrade m5-infer` is sufficient.
+Existing engine.toml continues to work; new `[memory]` fields are
+optional.
+
+---
+
 ## [1.1.1] — 2026-04-22
 
 Emergency hot-fix for PyPI installability. **v1.1.0 (and earlier) cannot

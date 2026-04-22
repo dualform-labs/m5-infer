@@ -170,10 +170,28 @@ def init_routes(
     context_compressor = cc
 
 
+# v1.1.2: server uptime anchor + request counter
+import time as _time
+_SERVER_BOOT_TS: float = _time.perf_counter()
+_REQUESTS_SERVED: int = 0
+
+
+def _increment_requests_served() -> None:
+    """Called from the chat endpoint so /health can report throughput."""
+    global _REQUESTS_SERVED
+    _REQUESTS_SERVED += 1
+
+
 @router.get("/health")
 async def health() -> HealthResponse:
+    from app import __version__ as _ver
+    base = {
+        "version": _ver,
+        "uptime_s": round(_time.perf_counter() - _SERVER_BOOT_TS, 2),
+        "requests_served": _REQUESTS_SERVED,
+    }
     if model_manager is None or not model_manager.is_ready():
-        return HealthResponse(status="not_ready")
+        return HealthResponse(status="not_ready", **base)
     info = await model_manager.health_check()
     # Phase C observability
     from app.engine.mmrs_registry import get_mmrs_registry
@@ -186,7 +204,70 @@ async def health() -> HealthResponse:
         info["mtab"] = get_tier_cache().stats()
     except Exception:
         info["mtab"] = None
+    info.update(base)
     return HealthResponse(**info)
+
+
+@router.get("/v1/stats")
+async def stats():
+    """Lightweight metrics snapshot: recent-request latency + cache hit-rates.
+
+    Intended for ``m5-infer status`` and ad-hoc monitoring. Prometheus
+    exposition is tracked for v1.3+.
+    """
+    from app import __version__ as _ver
+    out = {
+        "version": _ver,
+        "uptime_s": round(_time.perf_counter() - _SERVER_BOOT_TS, 2),
+        "requests_served": _REQUESTS_SERVED,
+    }
+
+    # MTAB tier cache (N=lifetime so far)
+    try:
+        from app.innovation.mtab.tier_cache import get_tier_cache
+        mtab = get_tier_cache().stats()
+        lookups = mtab.get("lookups", 0) or 0
+        hits = (mtab.get("exact_hits", 0) or 0) + (mtab.get("partial_hits", 0) or 0)
+        out["mtab"] = {
+            **mtab,
+            "hit_rate": round(hits / lookups, 3) if lookups else None,
+        }
+    except Exception:
+        out["mtab"] = None
+
+    # OIRC stats
+    try:
+        from app.engine.oirc import get_oirc
+        o = get_oirc()
+        if hasattr(o, "stats"):
+            out["oirc"] = o.stats()
+    except Exception:
+        out["oirc"] = None
+
+    # CTRSP on-disk size + entry count
+    try:
+        from app.core.paths import ctrsp_dir
+        p = ctrsp_dir()
+        entries = list(p.glob("*.npz"))
+        total = 0
+        for e in entries:
+            try:
+                total += e.stat().st_size
+            except OSError:
+                pass
+        out["ctrsp"] = {"entries": len(entries), "bytes": total}
+    except Exception:
+        out["ctrsp"] = None
+
+    # Model info
+    if model_manager and model_manager.is_ready():
+        out["model"] = model_manager.get_current_model_id()
+        try:
+            out["memory"] = model_manager.get_backend().get_memory_usage()
+        except Exception:
+            pass
+
+    return out
 
 
 @router.get("/v1/models")
@@ -472,6 +553,8 @@ async def pull_model(request: ModelPullRequest, http_request: Request):
 async def chat_completions(request: ChatCompletionRequest):
     if model_manager is None:
         raise HTTPException(status_code=503, detail="Server not initialized")
+
+    _increment_requests_served()
 
     # If model field specifies a HF repo, auto-load it.
     # Guard with swap lock + generation lock so we don't pull the model out
