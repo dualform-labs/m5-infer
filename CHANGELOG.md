@@ -2,6 +2,64 @@
 
 All notable changes to **m5-infer** will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] — 2026-04-22
+
+Emergency hot-fix for PyPI installability. **v1.1.0 (and earlier) cannot
+start when installed from PyPI** because the wheel did not ship
+`configs/engine.toml`, and `app.core.config` raised `FileNotFoundError`
+during module import. Users running from an editable source checkout
+(`pip install -e .`) were unaffected; PyPI users hit the bug immediately.
+
+### Fixed
+
+- **P0: PyPI install fails on first launch.** The `configs/*.toml` files
+  are now embedded inside the wheel as `app/_defaults/*.toml` via hatchling
+  `force-include`, and `app.core.config` no longer raises at import time
+  when no project root is discoverable. See new `app/core/paths.py` for the
+  full resolution order.
+- **Config search order:** `$M5_INFER_CONFIG` → `./configs/*.toml` →
+  `$XDG_CONFIG_HOME/m5-infer/*.toml` (falls back to `~/.config/m5-infer/`)
+  → project root (editable install) → bundled `app/_defaults/*.toml`.
+  Every layer logs a clear error message pointing at `m5-infer init` if
+  nothing resolves.
+- **Runtime data directory:** CTRSP snapshots, SQLite metrics, and logs
+  used `./state/` and `./logs/` unconditionally. PyPI users running from
+  `~` ended up polluting their home with these directories. Now resolved
+  via `app/core/paths.py::data_root()`:
+  1. `$M5_INFER_DATA_DIR` explicit override.
+  2. Current working directory if it looks like the source tree
+     (`pyproject.toml` + `app/` both present) — preserves the legacy layout
+     for developers.
+  3. `$XDG_DATA_HOME/m5-infer` (else `~/.local/share/m5-infer`).
+
+### Added
+
+- **`m5-infer` CLI subcommands and flags.** The console entry point now
+  supports:
+  - `m5-infer` / `m5-infer start` — foreground server (no `cd` needed).
+  - `m5-infer init [--dir <path>]` — copy bundled defaults to
+    `./configs/` for customization.
+  - `m5-infer --version`, `--help`.
+  - `--config <path>`, `--port <n>`, `--host <h>` runtime overrides.
+- **Ready banner** on startup. A single stdout line summarizes URL, model,
+  config path, data dir, and resident memory so operators see one clear
+  "the server is up" marker even at default log levels.
+- **First-run download notice.** When the configured main model isn't in
+  the HuggingFace cache, a human-friendly warning is printed before the
+  download begins so `m5-infer` no longer appears to hang silently.
+- **Friendly port-in-use error.** Replaces the raw `OSError: [Errno 48]`
+  with a message that suggests `--port` / `engine.toml [server] port`.
+- **Fresh-venv install smoke test** added to the CI matrix so this class
+  of regression is caught before future releases.
+
+### Migration
+
+No action required — `pip install --upgrade m5-infer` picks up the fix.
+Existing editable installs continue to work unchanged. Users who had
+pinned `1.1.0` and hit the bug should upgrade.
+
+---
+
 ## [1.1.0] — 2026-04-22
 
 Quality-neutral critical-path optimization stack plus agent-safe opt-in

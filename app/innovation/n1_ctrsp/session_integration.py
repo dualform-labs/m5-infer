@@ -18,12 +18,12 @@ def get_ctrsp_manager() -> CTRSPManager:
     """
     global _ctrsp_manager
     if _ctrsp_manager is None:
-        from pathlib import Path
         from app.core.config import get_settings
+        from app.core.paths import ctrsp_dir
         # Mode-aware LRU size (scales with memory tier).
         feat = get_settings().runtime.active_features()
         lru_size = feat.ctrsp_lru_size
-        persist_dir = Path("state/ctrsp")
+        persist_dir = ctrsp_dir()
         _ctrsp_manager = CTRSPManager(
             max_cached_states=lru_size,
             persist_dir=str(persist_dir),

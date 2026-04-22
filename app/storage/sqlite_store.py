@@ -26,11 +26,15 @@ class SQLiteStore:
 
     def __init__(
         self,
-        db_path: str = "state/metrics.db",
+        db_path: str | None = None,
         flush_every_rows: int = 20,
         flush_every_sec: float = 5.0,
     ):
-        self._db_path = Path(db_path)
+        if db_path is None:
+            from app.core.paths import metrics_db_path
+            self._db_path = metrics_db_path()
+        else:
+            self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn: sqlite3.Connection | None = None
         self._flush_every_rows = flush_every_rows

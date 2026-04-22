@@ -49,3 +49,17 @@ jobs:
       - name: Import smoke test
         run: |
           python -c "import app; import app.backend.custom_generate; import app.engine.innovation_executor; import app.api.routes; import app.api.server; import app.core.config; import app.core.auto_tune; import app.core.hardware_profile; print(f'Import smoke OK -- m5-infer v{app.__version__}')"
+
+      - name: Fresh-venv install smoke test (simulates PyPI install)
+        run: |
+          # Build sdist + wheel, then install into a clean venv from another cwd.
+          # Catches "project root required" / "configs/ missing" regressions that
+          # editable installs can hide.
+          python -m pip install --upgrade build
+          python -m build --wheel --outdir dist-smoke
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/pip install --upgrade pip
+          /tmp/fresh/bin/pip install dist-smoke/m5_infer-*.whl
+          cd /tmp  # IMPORTANT: leave source tree so CWD has no configs/ or pyproject.toml
+          /tmp/fresh/bin/m5-infer --version
+          /tmp/fresh/bin/python -c "from app.core.config import get_settings; s = get_settings(); print('fresh install OK, port:', s.server.port)"

@@ -117,7 +117,8 @@ def get_ssd_table() -> SSDTable:
     if _singleton is None:
         _singleton = SSDTable()
         # Best-effort load; silent if file doesn't exist
-        default_path = Path("state/ssd_table.json")
+        from app.core.paths import state_dir
+        default_path = state_dir() / "ssd_table.json"
         if default_path.exists():
             _singleton.load_from_file(str(default_path))
     return _singleton

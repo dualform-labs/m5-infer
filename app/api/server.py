@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from app.api.routes import router, init_routes, metrics as route_metrics
 from app.engine.main_model_manager import MainModelManager
@@ -112,6 +114,27 @@ async def lifespan(app: FastAPI):
     rp = RequestPlanner(memory_guard=mg)
     sv = Supervisor(memory_guard=mg, session_manager=sm)
 
+    # First-run: if the configured main model isn't in the HF cache, warn the
+    # user that startup will block on a ~GB download. Best-effort — any error
+    # here is non-fatal, we just skip the hint.
+    try:
+        from app.core.model_registry import get_registry
+        _profile = get_registry().get_main()
+        _repo = getattr(_profile, "path", None) or ""
+        if "/" in _repo:  # HF repo id form "org/name"
+            from huggingface_hub.constants import HF_HUB_CACHE
+            _cache_dir = Path(HF_HUB_CACHE) / ("models--" + _repo.replace("/", "--"))
+            _has_snapshot = _cache_dir.exists() and any(_cache_dir.glob("snapshots/*/config.json"))
+            if not _has_snapshot:
+                print(
+                    f"\n[m5-infer] First run detected for {_repo}.\n"
+                    f"           Downloading model from HuggingFace — this can take several minutes.\n"
+                    f"           Progress appears on stderr below. Set HF_TOKEN to avoid rate limits.\n",
+                    flush=True,
+                )
+    except Exception as _firstrun_err:
+        logger.debug("first-run check skipped: %s", _firstrun_err)
+
     await mm.startup()
 
     # ── RDMS: Resident draft model (if configured for active mode) ──
@@ -182,6 +205,27 @@ async def lifespan(app: FastAPI):
     app.state.sqlite_store = sqlite_store
 
     logger.info("M5 Inference Engine ready")
+
+    # Human-friendly single-line ready banner (goes to stdout so it's always
+    # visible even when log level is WARN). Detailed state remains in logs.
+    try:
+        from app import __version__ as _ver
+        from app.core.paths import data_root, find_config
+        _cfg_path, _cfg_text = find_config("engine.toml")
+        _cfg_shown = str(_cfg_path) if _cfg_path else "bundled defaults"
+        _mem = mm.get_backend().get_memory_usage()
+        print(
+            f"\n[Ready] m5-infer v{_ver}  "
+            f"http://{settings.server.host}:{settings.server.port}  |  "
+            f"model: {mm.get_current_model_id() or settings.model.main_path or 'auto'}  |  "
+            f"config: {_cfg_shown}  |  "
+            f"data: {data_root()}  |  "
+            f"resident: {_mem.get('active_gb', 0):.1f} GB\n",
+            flush=True,
+        )
+    except Exception as _banner_err:  # never block startup on banner
+        logger.debug("ready-banner skipped: %s", _banner_err)
+
     yield
 
     logger.info("M5 Inference Engine shutting down...")
@@ -202,12 +246,122 @@ def create_app() -> FastAPI:
     return app
 
 
-def main():
+def _cmd_init(target_dir: str | None = None) -> int:
+    """Write bundled default config files to ``./configs/`` (or override dir)."""
+    import os
+    from importlib.resources import files as _res_files
+    from pathlib import Path
+
+    dst_dir = Path(target_dir).expanduser() if target_dir else (Path.cwd() / "configs")
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    created = 0
+    for name in ("engine.toml", "models.toml"):
+        try:
+            src = _res_files("app").joinpath("_defaults", name)
+        except (FileNotFoundError, ModuleNotFoundError):
+            print(f"  ! bundled default for {name} not found (is m5-infer installed correctly?)")
+            continue
+        dst = dst_dir / name
+        if dst.exists():
+            print(f"  = {dst} already exists (skipped)")
+            continue
+        dst.write_bytes(src.read_bytes())
+        print(f"  + {dst}")
+        created += 1
+
+    if created:
+        print(f"\nCreated {created} config file(s) in {dst_dir}")
+        print("Edit them to tune m5-infer, then run `m5-infer start`.")
+    else:
+        print(f"\nNo files written. {dst_dir} already has the config files.")
+    return 0
+
+
+def _cmd_start(args) -> int:
+    """Run the foreground server, applying any CLI overrides."""
+    import os
+    import sys
+
+    if args.config:
+        os.environ["M5_INFER_CONFIG"] = str(Path(args.config).expanduser().resolve())
+
+    try:
+        settings = get_settings()
+    except FileNotFoundError as e:
+        print(f"[m5-infer] Configuration error:\n{e}", file=sys.stderr)
+        print("\nHint: run `m5-infer init` to create a local ./configs/engine.toml.",
+              file=sys.stderr)
+        return 1
+
+    host = args.host or settings.server.host
+    port = args.port or settings.server.port
+
     import uvicorn
-    settings = get_settings()
-    app = create_app()
-    uvicorn.run(app, host=settings.server.host, port=settings.server.port)
+    try:
+        app = create_app()
+        uvicorn.run(app, host=host, port=port)
+    except OSError as e:
+        if "Address already in use" in str(e) or getattr(e, "errno", None) == 48:
+            print(
+                f"[m5-infer] Port {port} is already in use.\n"
+                f"  Try: m5-infer start --port 11437\n"
+                f"  Or edit [server] port in your engine.toml.",
+                file=sys.stderr,
+            )
+            return 1
+        raise
+    return 0
+
+
+def main():
+    """Console entry point (``m5-infer``)."""
+    import argparse
+    from pathlib import Path
+    from app import __version__
+
+    parser = argparse.ArgumentParser(
+        prog="m5-infer",
+        description="MLX inference engine for Apple Silicon (OpenAI-compatible).",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"m5-infer {__version__}",
+    )
+    parser.add_argument(
+        "--config", type=str, default=None,
+        help="Path to engine.toml (file) or configs/ (directory).",
+    )
+    parser.add_argument(
+        "--port", type=int, default=None,
+        help="Override server port (default from engine.toml).",
+    )
+    parser.add_argument(
+        "--host", type=str, default=None,
+        help="Override server host (default from engine.toml).",
+    )
+
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser(
+        "start",
+        help="Start the server in the foreground (default if no command given).",
+    )
+    init_sub = sub.add_parser(
+        "init",
+        help="Create ./configs/engine.toml and models.toml from bundled defaults.",
+    )
+    init_sub.add_argument(
+        "--dir", type=str, default=None,
+        help="Target directory (default: ./configs).",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "init":
+        return _cmd_init(target_dir=args.dir)
+
+    # Default: start the server (args.command is None or "start")
+    return _cmd_start(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main() or 0)

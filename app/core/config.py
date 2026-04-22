@@ -1,7 +1,9 @@
 """M5 MLX Inference Engine — configuration loader.
 
-Loads engine.toml and models.toml from the configs/ directory,
-exposes typed Pydantic settings via singleton accessors.
+Loads engine.toml and models.toml via :mod:`app.core.paths`, which handles
+both source-tree (``./configs/``) and PyPI-installed (package-bundled
+``app/_defaults/``) layouts. Exposes typed Pydantic settings via singleton
+accessors.
 """
 
 from __future__ import annotations
@@ -13,36 +15,37 @@ from typing import Dict, Literal
 import tomlkit
 from pydantic import BaseModel, Field
 
+from app.core.paths import find_config
+
 
 # ---------------------------------------------------------------------------
-# Locate project root (directory containing pyproject.toml)
+# Legacy convenience constants (best-effort; may be None on PyPI installs)
 # ---------------------------------------------------------------------------
 
-def _find_project_root() -> Path:
-    """Walk up from this file until we find pyproject.toml."""
+def _best_effort_project_root() -> Path | None:
     current = Path(__file__).resolve().parent
     for ancestor in (current, *current.parents):
         if (ancestor / "pyproject.toml").is_file():
             return ancestor
-    raise FileNotFoundError(
-        "Could not locate project root (no pyproject.toml found above "
-        f"{Path(__file__).resolve()})"
-    )
+    return None
 
 
-PROJECT_ROOT: Path = _find_project_root()
-CONFIGS_DIR: Path = PROJECT_ROOT / "configs"
+PROJECT_ROOT: Path | None = _best_effort_project_root()
+CONFIGS_DIR: Path | None = (PROJECT_ROOT / "configs") if PROJECT_ROOT else None
 
 
 # ---------------------------------------------------------------------------
 # TOML helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_toml(name: str) -> dict:
-    path = CONFIGS_DIR / name
-    if not path.is_file():
-        raise FileNotFoundError(f"Config file not found: {path}")
-    return tomlkit.loads(path.read_text(encoding="utf-8"))
+    """Load a config file via the layered search, falling back to bundled defaults."""
+    path, text = find_config(name)
+    if text is None:
+        assert path is not None
+        text = path.read_text(encoding="utf-8")
+    return tomlkit.loads(text)
 
 
 # ---------------------------------------------------------------------------
