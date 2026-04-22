@@ -335,9 +335,9 @@ tests/              Unit tests
 >
 > Read these numbers as **"what an 24 GB base-tier Mac can do"**, not as a hardware ceiling. If you run the same benches on better hardware we'd love to see the numbers.
 
-### Benchmarks — full_suite (same script, same hardware, same model)
+### Benchmarks — full_suite (same methodology, same hardware, same model)
 
-All three engines run the **same `full_suite_bench`** script against **Qwen 3.5 9B (4-bit quantization)** on the machine described above. The same prompts, same measurement method, same machine.
+All three engines are measured with the **same methodology** against **Qwen 3.5 9B (4-bit quantization)** on the machine described above: same prompts, same decoder settings (`temperature = 0`), same machine, same warmup protocol. The in-house bench harness that produces these numbers is kept internal to keep the public repo small; if you want to reproduce, a short OpenAI-compatible probe client against `http://127.0.0.1:11436/v1/chat/completions` with the prompts from the tables below is sufficient.
 
 | Metric | Ollama | mlx_lm.server | **m5-infer v1.0.0** |
 |:---|---:|---:|---:|
@@ -370,7 +370,7 @@ Qwen 3.5 supports `<think>` reasoning blocks. We ran the same bench (long_gen ×
 
 > **m5-infer is the only engine that passes short QA with thinking ON** — the other two leave the answer buried in the `reasoning`/`<think>` block and the user-visible `content` stays empty. m5-infer's think-aware parser surfaces the answer correctly regardless of mode.
 
-> Decode: m5-infer stays **2.6×** above mlx_lm even with thinking enabled (28.8 vs 18.6 tps).
+> Decode: m5-infer stays **up to 2.6×** above mlx_lm even with thinking enabled (28.8 vs 18.6 tps on long_gen 512-token decode).
 
 ![Thinking decode comparison](docs/images/fs_thinking_decode.png)
 ![Thinking quality matrix](docs/images/fs_thinking_quality.png)
@@ -742,9 +742,9 @@ tests/              Unit tests
 >
 > **「24 GB base-tier Mac でここまで出る」**という下限値として読んでください。ハードウェアの上限を示す数値ではありません。より強力な環境で同じベンチを回した場合の数値提供は歓迎します。
 
-### ベンチマーク — full_suite (3 エンジン同一スクリプト)
+### ベンチマーク — full_suite (同一手法、同一ハード、同一モデル)
 
-3 エンジン全てを **同一の `full_suite_bench`** スクリプト、**Qwen 3.5 9B (4bit 量子化)**、上記の実測環境で測定。プロンプトも計測手法も共通。
+3 エンジン全てを **同一の計測手法**、**Qwen 3.5 9B (4bit 量子化)**、上記の実測環境で測定。プロンプト・decoder 設定 (`temperature = 0`)・マシン・ウォームアップ手順は全て共通です。社内のベンチハーネスは公開リポには同梱していませんが、`http://127.0.0.1:11436/v1/chat/completions` に下記テーブルのプロンプトを投げる短い OpenAI 互換クライアントがあれば再現可能です。
 
 | 指標 | Ollama | mlx_lm.server | **m5-infer v1.0.0** |
 |:---|---:|---:|---:|
@@ -777,7 +777,7 @@ Qwen 3.5 の `<think>` 推論ブロックを **ON / OFF** の両方で、同じ 
 
 > **thinking ON の短答 QA をパスできるのは m5-infer だけ**。他の 2 エンジンは回答が `reasoning` / `<think>` 内に閉じ込められ、ユーザーに見える `content` が空のまま返ってくる。m5-infer の think-aware パーサーはモードに関係なく回答を正しく抽出する。
 
-> Decode: thinking ON のときでも m5-infer は mlx_lm.server の **2.6 倍** (28.8 vs 18.6 tps)。
+> Decode: thinking ON のときでも m5-infer は mlx_lm.server の **最大 2.6 倍** (28.8 vs 18.6 tps、long_gen 512 トークン decode でのピーク値)。
 
 ![Thinking decode 比較](docs/images/fs_thinking_decode.png)
 ![Thinking 品質 matrix](docs/images/fs_thinking_quality.png)

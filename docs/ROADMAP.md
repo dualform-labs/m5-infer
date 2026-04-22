@@ -64,6 +64,6 @@ Have a use case that is not covered above? Open a [GitHub Discussion](https://gi
 
 - What you are trying to do
 - Which engine you compared against and by how much m5-infer falls short
-- Any relevant metrics from `full_suite_bench.py`
+- Any relevant metrics from your own workload (decode tok/s, warm total latency, retrieval accuracy etc.); a short OpenAI-compatible probe is sufficient
 
 We prioritize features that unblock real workloads over speculative optimizations.

@@ -180,7 +180,7 @@ draft_path = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
 1. `pytest tests/test_core/test_model_family.py -v` で unit tests pass
 2. `pytest tests/ -q` で全体 regression なし
 3. Server 起動 + `/health` で family が正しく検出されているか確認
-4. スモークベンチで decode / needle / 長 prompt のレイテンシを実測し、回帰していないことを確認 (社内ベンチスクリプト `app/bench/` は公開パッケージには含まれないため、各自の OpenAI 互換クライアントで同等のプローブを送って検証可能)
+4. スモークベンチで decode / needle / 長 prompt のレイテンシを実測し、回帰していないことを確認 (`http://127.0.0.1:11436/v1/chat/completions` に OpenAI 互換の短いプローブクライアントを投げれば十分)
 5. 品質回帰が気になる場合は Opus など外部 LLM で採点 (任意)
 
 ---
