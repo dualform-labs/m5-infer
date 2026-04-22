@@ -354,10 +354,73 @@ def main():
         help="Target directory (default: ./configs).",
     )
 
+    # v1.1.2 subcommands: client-side tooling that talks to a running server.
+    chat_sub = sub.add_parser(
+        "chat",
+        help="Interactive chat CLI (requires a running server).",
+    )
+    chat_sub.add_argument(
+        "model", nargs="?", default=None,
+        help="Optional HuggingFace repo id to load before chatting.",
+    )
+
+    pull_sub = sub.add_parser(
+        "pull",
+        help="Download a model from HuggingFace through the server.",
+    )
+    pull_sub.add_argument("model", help="HuggingFace repo id (e.g. mlx-community/Qwen3.5-9B-MLX-4bit).")
+
+    bench_sub = sub.add_parser(
+        "bench",
+        help="Quick decode smoke benchmark (tok/s + TTFT).",
+    )
+    bench_sub.add_argument("--full", action="store_true", help="Run more iterations (slower, tighter median).")
+    bench_sub.add_argument("--quick", action="store_true", help="Run fewer iterations (default).")
+
+    sub.add_parser("stop", help="Stop the m5-infer server listening on the configured port.")
+    sub.add_parser("status", help="Print server health / loaded model / memory / cache stats.")
+
+    cache_sub = sub.add_parser("cache", help="Inspect or purge engine caches (CTRSP / OIRC / TPC).")
+    cache_action = cache_sub.add_subparsers(dest="cache_cmd")
+    cache_action.add_parser("list", help="Show current cache sizes.")
+    clear_cmd = cache_action.add_parser("clear", help="Purge caches.")
+    clear_cmd.add_argument("--ctrsp", action="store_true", help="Clear disk CTRSP snapshots.")
+    clear_cmd.add_argument("--oirc",  action="store_true", help="Clear in-memory OIRC (requires server restart).")
+    clear_cmd.add_argument("--tpc",   action="store_true", help="Clear in-memory TPC (requires server restart).")
+    clear_cmd.add_argument("--all",   action="store_true", help="Clear everything we can.")
+
+    models_sub = sub.add_parser("models", help="List models loaded on the server or present in the HF cache.")
+    models_sub.add_argument("--loaded", action="store_true", help="Show only the currently-loaded model.")
+    models_sub.add_argument("--cached", action="store_true", help="Show only models in the HF cache.")
+
     args = parser.parse_args()
 
+    # Dispatch
     if args.command == "init":
         return _cmd_init(target_dir=args.dir)
+    if args.command == "chat":
+        from app.cli.chat import run as chat_run
+        return chat_run(args) or 0
+    if args.command == "pull":
+        from app.cli.pull import run as pull_run
+        return pull_run(args) or 0
+    if args.command == "bench":
+        from app.cli.bench import run as bench_run
+        return bench_run(args) or 0
+    if args.command == "stop":
+        from app.cli.status import run_stop
+        return run_stop(args)
+    if args.command == "status":
+        from app.cli.status import run_status
+        return run_status(args)
+    if args.command == "cache":
+        from app.cli.cache import run_list, run_clear
+        if args.cache_cmd == "clear":
+            return run_clear(args)
+        return run_list(args)  # default to list if no sub
+    if args.command == "models":
+        from app.cli.models import run as models_run
+        return models_run(args)
 
     # Default: start the server (args.command is None or "start")
     return _cmd_start(args)

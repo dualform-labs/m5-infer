@@ -137,16 +137,35 @@ def stream_chat(messages: list, model: str, session_id: str) -> str:
     return full_text
 
 
+def run(args=None) -> int:
+    """Entry point for ``m5-infer chat``.
+
+    ``args`` is the argparse namespace from the top-level CLI dispatcher
+    (it carries ``model``). When invoked directly via
+    ``python -m app.cli.chat``, ``args`` is ``None`` and we fall back to
+    ``sys.argv[1]``.
+    """
+    if args is not None and getattr(args, "model", None):
+        model = args.model
+    else:
+        model = sys.argv[1] if len(sys.argv) > 1 else "default"
+    return _chat_loop(model)
+
+
 def main():
-    model = sys.argv[1] if len(sys.argv) > 1 else "default"
+    """Legacy entry point (``python -m app.cli.chat``)."""
+    return _chat_loop(sys.argv[1] if len(sys.argv) > 1 else "default")
+
+
+def _chat_loop(model: str) -> int:
     session_id = f"chat-{id(object()):x}"
 
     # Check server
     health = api_get("/health")
     if not health:
         print(f"{YELLOW}Server not running. Start it first:{NC}")
-        print("  ./start.sh")
-        sys.exit(1)
+        print("  m5-infer start      (or m5-infer)")
+        return 1
 
     # Get current model
     models = api_get("/v1/models")
@@ -158,7 +177,7 @@ def main():
         result = api_post("/v1/models/pull", {"model": model})
         if result.get("status") == "error":
             print(f"{YELLOW}Error: {result.get('error')}{NC}")
-            sys.exit(1)
+            return 1
         print(f"{GREEN}Loaded.{NC}")
         current = model
 
@@ -233,6 +252,8 @@ def main():
         if response_text.strip():
             history.append({"role": "assistant", "content": response_text})
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main() or 0)
