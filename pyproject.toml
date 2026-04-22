@@ -16,11 +16,13 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# Python 3.11 / 3.12 / 3.13 all supported. MLX currently targets 3.9-3.13 so
-# we follow the same window. No 3.14 classifier until MLX announces support.
-requires-python = ">=3.11,<3.14"
+# Python 3.11 / 3.12 / 3.13 / 3.14 all supported. MLX ships cp311-cp314 wheels
+# on PyPI; we track its supported window. Bump the upper bound when MLX
+# announces 3.15 support.
+requires-python = ">=3.11,<3.15"
 
 dependencies = [
     "mlx>=0.31.1",
