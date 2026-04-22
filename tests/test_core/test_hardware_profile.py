@@ -143,10 +143,21 @@ def test_wired_limit_respects_headroom():
     from app.core.auto_tune import _wired_limit_from_memory
     # Under 16 GB → no recommendation
     assert _wired_limit_from_memory(8) is None
-    # 24 GB → 24 - 6 = 18 GB = 18432 MB
-    assert _wired_limit_from_memory(24) == 18 * 1024
-    # 64 GB (>32) → 64 - 8 = 56 GB
-    assert _wired_limit_from_memory(64) == 56 * 1024
+    # v1.1.2 headroom scale (was 6/6/6/8/8 in v1.1.1):
+    # 16 GB → 12 GB (4 GB headroom)
+    assert _wired_limit_from_memory(16) == 12 * 1024
+    # 24 GB → 20 GB (was 18 GB pre-v1.1.2; loosened so 35B A3B-4bit fits)
+    assert _wired_limit_from_memory(24) == 20 * 1024
+    # 32 GB → 27 GB (5 GB headroom)
+    assert _wired_limit_from_memory(32) == 27 * 1024
+    # 64 GB → 58 GB (was 56 GB pre-v1.1.2; 6 GB headroom)
+    assert _wired_limit_from_memory(64) == 58 * 1024
+    # 128 GB → 121 GB (7 GB headroom)
+    assert _wired_limit_from_memory(128) == 121 * 1024
+    # Override: absolute cap wins
+    assert _wired_limit_from_memory(24, absolute_limit_gb=22) == 22 * 1024
+    # Override: explicit headroom wins over default
+    assert _wired_limit_from_memory(24, headroom_override_gb=2) == 22 * 1024
 
 
 def test_compute_overrides_includes_rdms_k():
@@ -180,7 +191,8 @@ def test_compute_overrides_m3_ultra_enterprise():
     ov = compute_overrides(p)
     assert ov.rdms_num_draft == 8
     assert ov.max_concurrent_requests == 6   # 80 cores → 6 concurrent
-    assert ov.wired_limit_mb == (192 - 8) * 1024
+    # v1.1.2: headroom for >64 GB lowered 8 → 7 GB
+    assert ov.wired_limit_mb == (192 - 7) * 1024
 
 
 def test_rdms_num_draft_flows_through_innovation_config():
