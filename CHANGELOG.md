@@ -2,6 +2,55 @@
 
 All notable changes to **m5-infer** will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.3] — 2026-04-22
+
+Hot-fix for two P1 issues Codex review surfaced against v1.1.2 after the
+PyPI push. Users on v1.1.2 should upgrade.
+
+### Fixed
+
+- **Chat CLI reported success on pull HTTP errors.** `m5-infer chat
+  <model>` checked only `status == "error"`, but `api_post` returns
+  `{"error": ..., "status_code": ...}` on HTTP failures — so a typo'd
+  repo id printed "Loaded." before the chat loop died. Now treats any
+  `error` key, any non-200 status_code, or an unrecognized status string
+  as failure. Only `loaded`/`already_loaded` is success.
+- **`POST /v1/models/pull` sync path always returned 502 on failure.**
+  `/v1/models/load` correctly maps `hardware_oom` to 503 (capacity
+  exceeded). Aligned the sync pull path so clients get consistent
+  status codes (503 = too big for this Mac, 502 = upstream failure).
+- **`_classify_pull_error` now checks HuggingFace exception classes
+  before string heuristics.** `RepositoryNotFoundError` used to be
+  misclassified as `auth` because HF's 401/404 conflation makes
+  `str(exc)` contain "401". Correct classes (`RepositoryNotFoundError`,
+  `RevisionNotFoundError`, `GatedRepoError`) are checked first, so a
+  typo'd repo now surfaces as `not_found` instead of `auth`.
+- **Metal OOM remediation text was inverted.** The old message said
+  "raise headroom" which actually makes usable Metal memory smaller.
+  Now says "lower headroom_gb or raise metal_limit_gb in engine.toml".
+
+### Changed
+
+- `m5-infer pull` (CLI) explicitly sends `"stream": true` in the request
+  body in addition to the `Accept: text/event-stream` header, so it
+  works through proxies that strip headers.
+- Headroom warning messaging: < 3 GB still emits WARNING, < 4 GB now
+  emits INFO (macOS needs ~4 GB for OS + active apps). Catches
+  aggressive configs one step earlier.
+
+### Docs
+
+- `/v1/models/pull` streaming docstring clarified: response is
+  `application/x-ndjson`, not SSE. Chunk schema enumerated. The
+  `Accept: text/event-stream` header is still honored as an opt-in
+  trigger for client convenience.
+
+### Migration
+
+No action required. `pip install --upgrade m5-infer`.
+
+---
+
 ## [1.1.2] — 2026-04-22
 
 Daily-driver CLI + first class download UX + memory-policy polish. No
