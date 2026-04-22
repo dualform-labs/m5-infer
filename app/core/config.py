@@ -75,6 +75,15 @@ class MemoryConfig(BaseModel):
     red_threshold_gb: float = 22.0
     reserve_for_system_gb: float = 2.0
     allow_sub_model_only_if_free_gb: float = 6.0
+    # v1.1.2 — Metal wired-memory limit overrides. Both are optional; see
+    # app.core.auto_tune._wired_limit_from_memory for the resolution order.
+    # Highest precedence first:
+    #   $M5_INFER_METAL_LIMIT_GB > metal_limit_gb > $M5_INFER_METAL_HEADROOM_GB
+    #   > headroom_gb > per-tier default.
+    metal_limit_gb: float | None = None
+    """Absolute Metal memory cap in GB (overrides headroom math)."""
+    headroom_gb: float | None = None
+    """How many GB to leave for macOS + other apps."""
 
 
 class ContextConfig(BaseModel):

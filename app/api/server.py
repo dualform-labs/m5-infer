@@ -52,8 +52,48 @@ async def lifespan(app: FastAPI):
             overrides = compute_overrides(chip)
             apply_overrides(settings, overrides)
 
-            # Apply Metal memory limit recommendation (safe — clamps to
-            # a fraction of total memory, OS keeps its headroom)
+            # Metal wired-memory limit — priority order (highest first):
+            #   1. $M5_INFER_METAL_LIMIT_GB env var
+            #   2. [memory] metal_limit_gb in engine.toml
+            #   3. $M5_INFER_METAL_HEADROOM_GB env var
+            #   4. [memory] headroom_gb in engine.toml
+            #   5. auto_tune per-tier default (already in overrides.wired_limit_mb)
+            import os as _os
+            from app.core.auto_tune import _wired_limit_from_memory as _recompute
+
+            abs_limit = None
+            source = "auto_tune per-tier default"
+            _env_abs = _os.getenv("M5_INFER_METAL_LIMIT_GB")
+            if _env_abs:
+                try:
+                    abs_limit = float(_env_abs)
+                    source = "$M5_INFER_METAL_LIMIT_GB env"
+                except ValueError:
+                    logger.warning("Invalid $M5_INFER_METAL_LIMIT_GB=%r (ignored)", _env_abs)
+            elif settings.memory.metal_limit_gb is not None:
+                abs_limit = float(settings.memory.metal_limit_gb)
+                source = "engine.toml [memory] metal_limit_gb"
+
+            headroom = None
+            if abs_limit is None:
+                _env_hr = _os.getenv("M5_INFER_METAL_HEADROOM_GB")
+                if _env_hr:
+                    try:
+                        headroom = float(_env_hr)
+                        source = "$M5_INFER_METAL_HEADROOM_GB env"
+                    except ValueError:
+                        logger.warning("Invalid $M5_INFER_METAL_HEADROOM_GB=%r (ignored)", _env_hr)
+                elif settings.memory.headroom_gb is not None:
+                    headroom = float(settings.memory.headroom_gb)
+                    source = "engine.toml [memory] headroom_gb"
+
+            if abs_limit is not None or headroom is not None:
+                overrides.wired_limit_mb = _recompute(
+                    chip.memory_gb,
+                    headroom_override_gb=headroom,
+                    absolute_limit_gb=abs_limit,
+                )
+
             if overrides.wired_limit_mb:
                 try:
                     import mlx.core as mx
@@ -61,10 +101,20 @@ async def lifespan(app: FastAPI):
                         mx.metal.set_memory_limit(
                             int(overrides.wired_limit_mb * 1024 * 1024),
                         )
+                        limit_gb = overrides.wired_limit_mb / 1024.0
                         logger.info(
-                            "Metal memory_limit set to %d MB (total %d GB - headroom)",
-                            overrides.wired_limit_mb, int(chip.memory_gb),
+                            "Metal memory_limit set to %d MB (%.1f GB on %d GB total) — source: %s",
+                            overrides.wired_limit_mb, limit_gb, int(chip.memory_gb), source,
                         )
+                        # Warn on aggressive configuration
+                        effective_headroom = chip.memory_gb - limit_gb
+                        if effective_headroom < 3.0:
+                            logger.warning(
+                                "Metal headroom is only %.1f GB — macOS may swap under "
+                                "memory pressure; inference tok/s may drop. Consider "
+                                "closing other apps or loosening the limit.",
+                                effective_headroom,
+                            )
                 except Exception as _exc:
                     logger.debug("Metal memory_limit skipped: %s", _exc)
         else:

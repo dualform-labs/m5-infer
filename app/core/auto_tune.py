@@ -223,15 +223,49 @@ def _rdms_k_from_bandwidth(bw_gbps: int) -> int:
     return 3
 
 
-def _wired_limit_from_memory(memory_gb: float) -> Optional[int]:
+def _default_headroom_gb(memory_gb: float) -> float:
+    """Per-tier Metal headroom (for OS + other processes).
+
+    v1.1.2 tightened these after 24 GB users hit "Insufficient Memory" on
+    18.6 GB models that physically would fit on the 24 GB Mac: the previous
+    default left 6 GB headroom, too conservative. New scale assumes the
+    machine is primarily a dev box where the user can close other apps
+    before running large models.
+    """
+    if memory_gb <= 16:   return 4.0   # was 6 → 10 GB limit on 16 GB
+    if memory_gb <= 24:   return 4.0   # was 6 → 20 GB limit on 24 GB (fits 35B A3B)
+    if memory_gb <= 32:   return 5.0   # was 6 → 27 GB on 32 GB
+    if memory_gb <= 64:   return 6.0   # was 8 → 42 GB on 48, 58 GB on 64
+    return 7.0                          # was 8 → 121 GB on 128, 185 GB on 192
+
+
+def _wired_limit_from_memory(
+    memory_gb: float,
+    headroom_override_gb: Optional[float] = None,
+    absolute_limit_gb: Optional[float] = None,
+) -> Optional[int]:
     """Recommend Metal wired-memory limit in MB.
 
-    Leaves headroom for OS + other processes. Returns None if memory is
-    below the minimum (16 GB) to avoid starving the host.
+    Priority (highest first):
+      1. ``absolute_limit_gb`` — engine.toml ``[memory] metal_limit_gb`` or
+         ``$M5_INFER_METAL_LIMIT_GB``. Trusted verbatim (clamped to RAM).
+      2. ``headroom_override_gb`` — engine.toml ``[memory] headroom_gb`` or
+         ``$M5_INFER_METAL_HEADROOM_GB``.
+      3. Per-tier default (:func:`_default_headroom_gb`).
+
+    Returns None when memory is below 16 GB (inference of interesting
+    models at 4-bit already doesn't fit comfortably).
     """
+    if absolute_limit_gb is not None:
+        limit = max(4.0, min(float(absolute_limit_gb), memory_gb - 1.0))
+        return int(limit * 1024)
     if memory_gb < 16:
         return None
-    headroom_gb = 6.0 if memory_gb <= 32 else 8.0
+    headroom_gb = (
+        float(headroom_override_gb)
+        if headroom_override_gb is not None
+        else _default_headroom_gb(memory_gb)
+    )
     limit_gb = max(8.0, memory_gb - headroom_gb)
     return int(limit_gb * 1024)
 

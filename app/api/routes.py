@@ -247,6 +247,82 @@ def _classify_pull_error(exc: BaseException) -> tuple[str, str]:
     return ("error", s)
 
 
+def _is_in_hf_cache(repo_id: str) -> bool:
+    """True iff the HF cache has a usable snapshot for this repo id."""
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE
+    except Exception:
+        return False
+    from pathlib import Path
+    folder = Path(HF_HUB_CACHE) / ("models--" + repo_id.replace("/", "--"))
+    if not folder.is_dir():
+        return False
+    return any(folder.glob("snapshots/*/config.json"))
+
+
+@router.post("/v1/models/load")
+async def load_model_endpoint(request: ModelPullRequest, http_request: Request):
+    """Hot-swap to a model already present in the HuggingFace cache.
+
+    Unlike ``/v1/models/pull``, this does NOT download — if the repo is not
+    cached locally it returns 404 with a hint. Use this when you know the
+    model is already on disk (e.g. ``m5-infer pull`` finished earlier) and
+    you want a quick swap without waiting for cache probing.
+
+    Drops the CTRSP state associated with the previously loaded model so
+    stale snapshots tagged to the old model-id never collide with the new
+    one.
+    """
+    if model_manager is None:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+
+    repo = request.model
+    if not _is_in_hf_cache(repo):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error_code": "not_cached",
+                "error": (
+                    f"Model '{repo}' is not in the HuggingFace cache. "
+                    f"Run `m5-infer pull {repo}` or POST /v1/models/pull first."
+                ),
+                "model": repo,
+            },
+        )
+
+    # Drop stale CTRSP snapshots tagged to the currently-loaded model before
+    # swapping — they'll never hit under the new model anyway.
+    try:
+        from app.innovation.n1_ctrsp.session_integration import get_ctrsp_manager
+        ctrsp = get_ctrsp_manager()
+        if hasattr(ctrsp, "clear"):
+            dropped = ctrsp.clear()
+            logger.info("CTRSP: dropped %d cached state(s) before model swap", dropped)
+    except Exception as _exc:
+        logger.debug("CTRSP drop skipped: %s", _exc)
+
+    async with _model_swap_lock:
+        async with _generation_lock:
+            try:
+                result = await model_manager.load_model(repo)
+                if executor is not None:
+                    executor.set_backend(model_manager.get_backend())
+                    executor.initialize_innovations()
+                return ModelPullResponse(
+                    status=result["status"], model=repo,
+                    memory=result.get("memory"),
+                )
+            except Exception as e:
+                logger.exception("Failed to load cached model: %s", repo)
+                code, msg = _classify_pull_error(e)
+                # Metal OOM specifically → 503 "capacity exceeded"
+                status = 503 if code == "hardware_oom" else 502
+                raise HTTPException(
+                    status_code=status,
+                    detail={"error_code": code, "error": msg, "model": repo},
+                )
+
+
 @router.post("/v1/models/pull")
 async def pull_model(request: ModelPullRequest, http_request: Request):
     """Download and load a model from HuggingFace.
