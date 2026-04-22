@@ -175,8 +175,15 @@ def _chat_loop(model: str) -> int:
     if model != "default" and "/" in model and current != model:
         print(f"{YELLOW}Loading model: {model} ...{NC}")
         result = api_post("/v1/models/pull", {"model": model})
-        if result.get("status") == "error":
-            print(f"{YELLOW}Error: {result.get('error')}{NC}")
+        # Success only when server returns a recognized positive status; any
+        # "error" key or HTTP status_code signals failure.
+        if (
+            result.get("error")
+            or result.get("status_code") not in (None, 200)
+            or result.get("status") not in ("loaded", "already_loaded")
+        ):
+            err = result.get("error") or f"unexpected response: {result}"
+            print(f"{YELLOW}Pull failed: {err}{NC}")
             return 1
         print(f"{GREEN}Loaded.{NC}")
         current = model
@@ -209,8 +216,13 @@ def _chat_loop(model: str) -> int:
             new_model = user_input.strip()[7:].strip()
             print(f"{YELLOW}Switching to: {new_model} ...{NC}")
             result = api_post("/v1/models/pull", {"model": new_model})
-            if result.get("status") == "error":
-                print(f"{YELLOW}Error: {result.get('error')}{NC}")
+            if (
+                result.get("error")
+                or result.get("status_code") not in (None, 200)
+                or result.get("status") not in ("loaded", "already_loaded")
+            ):
+                err = result.get("error") or f"unexpected response: {result}"
+                print(f"{YELLOW}Switch failed: {err}{NC}")
             else:
                 current = new_model
                 model = new_model

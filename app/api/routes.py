@@ -305,6 +305,23 @@ def _classify_pull_error(exc: BaseException) -> tuple[str, str]:
     """Return (short_code, human_message) for a snapshot_download/load failure."""
     s = str(exc)
     sl = s.lower()
+    # Check known HF exception classes FIRST (more reliable than string heuristics).
+    # HuggingFace 401/404 conflation means a string-based check would misclassify
+    # RepositoryNotFoundError as "auth".
+    try:
+        from huggingface_hub.errors import (
+            RepositoryNotFoundError,
+            RevisionNotFoundError,
+            GatedRepoError,
+        )
+        if isinstance(exc, RepositoryNotFoundError):
+            return ("not_found", f"Repo not found on HuggingFace: {s}")
+        if isinstance(exc, RevisionNotFoundError):
+            return ("revision_not_found", f"Revision not found on HuggingFace: {s}")
+        if isinstance(exc, GatedRepoError):
+            return ("auth", f"Repo is gated. Set HF_TOKEN and accept the license: {s}")
+    except ImportError:
+        pass
     if "429" in s or "rate" in sl and "limit" in sl:
         return (
             "rate_limited",
@@ -323,7 +340,8 @@ def _classify_pull_error(exc: BaseException) -> tuple[str, str]:
         return (
             "hardware_oom",
             f"Model too large for the available Metal memory: {s}. "
-            f"Try a smaller variant or raise [memory] headroom in engine.toml.",
+            f"Try a smaller variant, lower [memory] headroom_gb, or set a "
+            f"higher [memory] metal_limit_gb in engine.toml.",
         )
     return ("error", s)
 
@@ -413,10 +431,20 @@ async def pull_model(request: ModelPullRequest, http_request: Request):
     1. **Synchronous** (default, v1.1.0-compatible): blocks until download
        and load complete, then returns a single ``ModelPullResponse``.
     2. **Streaming** (v1.1.2+): set ``stream=true`` or send
-       ``Accept: text/event-stream``. Returns newline-delimited JSON
-       chunks with per-tick progress (``bytes_dl``, ``mbps``, ``eta_s``)
-       during the download phase, then a final ``{"status": "..."}`` chunk
-       on completion.
+       ``Accept: text/event-stream``. Returns **newline-delimited JSON**
+       (``application/x-ndjson``) chunks describing each phase:
+
+           {"phase":"download_start","model":...,"bytes_dl":N}
+           {"phase":"downloading","model":...,"bytes_dl":N,
+            "mbps":X,"elapsed_s":Y}            # emitted ~once per second
+           {"phase":"load_start","model":...,"bytes_dl":N}
+           {"phase":"success","status":"loaded"|"already_loaded",
+            "model":...,"memory":{...}}
+           {"phase":"error","error_code":...,"error":...}   # terminal
+
+       The ``Accept: text/event-stream`` header is honored as an opt-in
+       signal even though the actual framing is NDJSON (simpler client
+       parsing; no SSE framing overhead).
 
     In streaming mode the master lock is released during the HuggingFace
     network phase, so ``/health`` and chat against the currently-loaded
@@ -454,8 +482,11 @@ async def pull_model(request: ModelPullRequest, http_request: Request):
                 except Exception as e:
                     logger.exception("Failed to pull model: %s", repo)
                     code, msg = _classify_pull_error(e)
+                    # Match /v1/models/load: hardware OOM → 503 (capacity
+                    # exceeded), every other failure → 502 (upstream problem).
+                    status = 503 if code == "hardware_oom" else 502
                     raise HTTPException(
-                        status_code=502,
+                        status_code=status,
                         detail={"error_code": code, "error": msg, "model": repo},
                     )
 

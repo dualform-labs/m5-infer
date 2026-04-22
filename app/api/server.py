@@ -106,13 +106,16 @@ async def lifespan(app: FastAPI):
                             "Metal memory_limit set to %d MB (%.1f GB on %d GB total) — source: %s",
                             overrides.wired_limit_mb, limit_gb, int(chip.memory_gb), source,
                         )
-                        # Warn on aggressive configuration
+                        # Warn on aggressive configuration. macOS needs ~4 GB
+                        # just for the OS + active apps; less than that risks
+                        # swap under multitasking pressure.
                         effective_headroom = chip.memory_gb - limit_gb
-                        if effective_headroom < 3.0:
-                            logger.warning(
+                        if effective_headroom < 4.0:
+                            level = logger.warning if effective_headroom < 3.0 else logger.info
+                            level(
                                 "Metal headroom is only %.1f GB — macOS may swap under "
                                 "memory pressure; inference tok/s may drop. Consider "
-                                "closing other apps or loosening the limit.",
+                                "closing other apps or setting [memory] headroom_gb.",
                                 effective_headroom,
                             )
                 except Exception as _exc:

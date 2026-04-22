@@ -1,9 +1,9 @@
 """`m5-infer pull <model>` — download + load a HuggingFace model through the server.
 
-Until v1.1.2 Phase 2 adds SSE streaming to ``/v1/models/pull``, this uses the
-synchronous endpoint and prints a best-effort heartbeat. Once Phase 2.1 lands
-this module switches to the SSE consumer (a ``stream=True`` flag is already
-accepted; the server side just ignores it for now).
+Consumes the NDJSON streaming response from ``/v1/models/pull`` (v1.1.2+).
+For backward compatibility with older servers that ignore the stream flag and
+return a single JSON blob, a background polling thread reports on-disk cache
+growth so the user still sees progress.
 """
 
 from __future__ import annotations
@@ -29,17 +29,6 @@ from app.cli._http import (
     die_if_server_down,
     server_url,
 )
-
-
-def _supports_stream(pull_path: str) -> bool:
-    """Probe whether the server understands the SSE query flag (v1.1.2+)."""
-    # Cheap heuristic: v1.1.1 and earlier will happily accept the flag and
-    # return the usual blocking JSON. v1.1.2+ returns ``text/event-stream``.
-    # We run a HEAD against /openapi.json to look up the endpoint description,
-    # but since we don't have a reliable marker yet, just always TRY streaming
-    # and fall back to non-stream consumption if we don't see chunk-encoded
-    # progress events within a grace window.
-    return True  # keep simple; api_post_stream tolerates both shapes
 
 
 def _hf_cache_size(repo_id: str) -> int | None:
@@ -112,32 +101,46 @@ def run(args) -> int:
 
     saw_stream_event = False
     final: dict | None = None
+    failed = False
     try:
-        for event in api_post_stream("/v1/models/pull", {"model": repo}):
-            if "error" in event:
+        for event in api_post_stream("/v1/models/pull", {"model": repo, "stream": True}):
+            # Transport-level failure (HTTP error from api_post_stream)
+            if "error" in event and "phase" not in event:
                 stop_flag["stop"] = True
                 hb.join(timeout=1.0)
                 code = event.get("status_code", "?")
                 print(f"  {RED}✗ pull failed ({code}):{NC} {event['error']}")
                 return 1
-            if event.get("status"):
-                final = event
-                saw_stream_event = True
-                continue
-            # Per-file progress event (Phase 2.1 format)
-            if "file" in event and "percent" in event:
-                saw_stream_event = True
+            phase = event.get("phase", "")
+            saw_stream_event = True
+            if phase == "error":
                 stop_flag["stop"] = True
-                hb.join(timeout=0.5)
-                pct = event["percent"]
-                speed = event.get("speed_mbps", 0)
-                eta = event.get("eta_s", 0)
+                hb.join(timeout=1.0)
+                print(
+                    f"  {RED}✗ {event.get('error_code','error')}:{NC} "
+                    f"{event.get('error','(no detail)')}"
+                )
+                failed = True
+                break
+            if phase == "downloading":
+                # Server reports per-second size / speed. Suppress our own
+                # heartbeat and render the server's number.
+                stop_flag["stop"] = True
+                size = event.get("bytes_dl", 0)
+                mbps = event.get("mbps", 0)
+                elapsed = event.get("elapsed_s", 0)
                 sys.stdout.write(
-                    f"\r  {CYAN}{event['file'][:40]:<40s}{NC}  "
-                    f"{pct:5.1f}%  {speed:5.1f} MB/s  "
-                    f"{GRAY}ETA {int(eta)}s{NC}    "
+                    f"\r  {CYAN}downloading{NC}  {_fmt_size(size):>10s}  "
+                    f"{GRAY}({mbps:5.1f} MB/s · elapsed {elapsed}s){NC}"
+                    + " " * 8
                 )
                 sys.stdout.flush()
+            elif phase == "load_start":
+                stop_flag["stop"] = True
+                sys.stdout.write(f"\r  {CYAN}loading model into MLX...{NC}" + " " * 30)
+                sys.stdout.flush()
+            elif phase == "success":
+                final = event
     except KeyboardInterrupt:
         stop_flag["stop"] = True
         hb.join(timeout=1.0)
@@ -147,13 +150,16 @@ def run(args) -> int:
     stop_flag["stop"] = True
     hb.join(timeout=1.0)
 
+    if failed:
+        return 1
     if saw_stream_event:
         print()
     total = _hf_cache_size(repo) or 0
-    if final and final.get("status") in ("success", "loaded", "already_loaded"):
+    if final and final.get("status") in ("loaded", "already_loaded"):
         print(f"  {GREEN}✓ {final['status']}{NC}  {_fmt_size(total)} on disk")
         return 0
     if final:
+        # Backward-compat with old servers (single JSON blob, no "phase")
         print(f"  {CYAN}server returned:{NC} {json.dumps(final)[:200]}")
         return 0
     print(f"  {GREEN}✓ complete{NC}  {_fmt_size(total)} on disk")
